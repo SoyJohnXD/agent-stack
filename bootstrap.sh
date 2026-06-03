@@ -185,13 +185,17 @@ main() {
     printf '[skip] intent-overlay not found\n'
   fi
 
-  # Step 7: Claude Code install (opt-in only)
+  # Step 7: apply Gentleman-CO persona override to all three agent configs
+  source "$AGENT_STACK_LOCAL/lib/persona.sh"
+  phase_persona
+
+  # Step 8: Claude Code install (opt-in only)
   if [ "$WITH_CLAUDE" = "1" ]; then
     printf '>>> Installing Claude Code...\n'
     run bash -c "curl -fsSL https://claude.ai/install.sh | bash"
   fi
 
-  # Step 8: symlink to entrypoint (refreshed)
+  # Step 9: symlink to entrypoint (refreshed)
   ensure_symlink "$AGENT_STACK_LOCAL/agent-stack" "${HOME}/.local/bin/agent-stack"
 
   if [ "$DRY_RUN" = "0" ]; then
