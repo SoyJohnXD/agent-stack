@@ -12,6 +12,7 @@ This one-liner:
 - Clones agent-stack to `~/.agent-stack/`
 - Clones codex-sdd-gentle-installer and runs its full install
 - Clones clean-code-lab and runs intent-overlay install
+- Applies the Gentleman-CO persona override to Claude Code, Codex, and Opencode
 - Creates `~/.local/bin/agent-stack` symlink
 - Installs gum (interactive menu, best-effort)
 
@@ -97,6 +98,7 @@ When run without arguments and `gum` is installed:
 
 | Phase | Commands run |
 |-------|-------------|
+| `bootstrap` | gum → agent-stack repo → codex install → intent-overlay install → **persona** → symlink |
 | `gentle` | `gentle-ai upgrade`, `gentle-ai sync` |
 | `persona` | Upserts `<!-- persona-co:start/end -->` block from `persona/gentleman-co.md` into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.override.md`, `~/.config/opencode/AGENTS.md`. Idempotent. Run automatically after `gentle` in every `sync`. |
 | `codex` | `git pull` → `install.sh` → `codex-sdd-sync --mcp-audit` |

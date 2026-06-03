@@ -10,7 +10,7 @@ Setup completo del stack de agentes de IA (Claude Code, Codex, Opencode) con SDD
 curl -fsSL https://raw.githubusercontent.com/SoyJohnXD/agent-stack/main/bootstrap.sh | bash
 ```
 
-Esto clona el repo, instala gentle-ai, configura Codex con SDD + MCP, instala el intent-overlay (clean-code-lab) y deja el binario `agent-stack` disponible en PATH.
+Esto clona el repo, instala gentle-ai, configura Codex con SDD + MCP, instala el intent-overlay (clean-code-lab), aplica la personalidad Gentleman-CO en los tres agentes y deja el binario `agent-stack` disponible en PATH. Queda todo listo de una sola vez.
 
 > Si también querés instalar Claude Code en el mismo paso, agregá `--with-claude`:
 > ```bash
@@ -29,22 +29,6 @@ codex login
 opencode login
 gentle-ai login
 ```
-
----
-
-## Aplicar la personalidad y configuración
-
-El bootstrap instala los CLIs pero no aplica la personalidad a los agentes. Corré esto una vez para dejarlo todo activo:
-
-```bash
-bash ~/.agent-stack/agent-stack sync
-```
-
-Esto corre las cuatro fases en orden:
-1. **gentle** — actualiza gentle-ai y sincroniza la configuración base
-2. **persona** — aplica el override Gentleman-CO (tono colombiano, guía completa, no chambonadas) en los tres agentes
-3. **codex** — actualiza el repo SDD y audita los MCPs
-4. **overlay** — instala el intent-overlay (control de calidad en cada PR)
 
 ---
 
