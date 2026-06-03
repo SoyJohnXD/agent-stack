@@ -284,6 +284,67 @@ BSUB_EXIT=$?
 rm -rf "$STUB_BSUB" "$TEST_HOME_BSUB"
 rm -f "$RECORD_BSUB"
 
+# ---------------------------------------------------------------------------
+# T6 — persona subcommand dispatches correctly (no other phase invoked)
+# ---------------------------------------------------------------------------
+TEST_HOME_P=$(new_home)
+RECORD_P=$(mktemp)
+STUB_P=$(new_stub_bin "$RECORD_P")
+
+T6_OUT=$(
+  export PATH="$STUB_P:$PATH"
+  export HOME="$TEST_HOME_P"
+  bash "$ENTRYPOINT" persona --dry-run 2>&1
+)
+T6_EXIT=$?
+
+[ "$T6_EXIT" = "0" ] && pass "T6: 'persona' subcommand exits 0" || fail "T6: 'persona' subcommand should exit 0, got $T6_EXIT"
+
+case "$T6_OUT" in
+  *"[dry-run]"*) pass "T6: 'persona' subcommand produces [dry-run] output" ;;
+  *) fail "T6: 'persona --dry-run' should produce [dry-run] lines (got: $T6_OUT)" ;;
+esac
+
+# Assert no other phase start markers appear (gentle/codex/overlay must NOT run)
+for phase_name in gentle codex overlay; do
+  case "$T6_OUT" in
+    *">>> START: $phase_name"*)
+      fail "T6: 'persona' subcommand should not invoke phase '$phase_name'"
+      ;;
+    *)
+      pass "T6: 'persona' subcommand does not invoke phase '$phase_name'"
+      ;;
+  esac
+done
+
+rm -rf "$STUB_P" "$TEST_HOME_P"
+rm -f "$RECORD_P"
+
+# ---------------------------------------------------------------------------
+# T7 — sync order: phase_gentle starts before phase_persona
+# ---------------------------------------------------------------------------
+TEST_HOME_ORD=$(new_home)
+RECORD_ORD=$(mktemp)
+STUB_ORD=$(new_stub_bin "$RECORD_ORD")
+
+SYNC_OUT=$(
+  export PATH="$STUB_ORD:$PATH"
+  export HOME="$TEST_HOME_ORD"
+  bash "$ENTRYPOINT" sync --dry-run 2>&1
+)
+
+GENTLE_LINE=$(printf '%s\n' "$SYNC_OUT" | grep -n '>>> START: gentle' | head -1 | cut -d: -f1)
+PERSONA_LINE=$(printf '%s\n' "$SYNC_OUT" | grep -n '>>> START: persona' | head -1 | cut -d: -f1)
+
+if [ -n "$GENTLE_LINE" ] && [ -n "$PERSONA_LINE" ] && [ "$GENTLE_LINE" -lt "$PERSONA_LINE" ]; then
+  pass "T7: sync order — 'gentle' starts before 'persona'"
+else
+  fail "T7: sync order check failed (gentle_line=$GENTLE_LINE persona_line=$PERSONA_LINE in output: $(printf '%s\n' "$SYNC_OUT" | grep 'START:' | head -5))"
+fi
+
+rm -rf "$STUB_ORD" "$TEST_HOME_ORD"
+rm -f "$RECORD_ORD"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else

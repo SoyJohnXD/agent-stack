@@ -22,6 +22,8 @@ source "$HERE/lib/clis.sh"
 source "$HERE/lib/doctor.sh"
 # shellcheck source=lib/bootstrap.sh
 source "$HERE/lib/bootstrap.sh"
+# shellcheck source=lib/persona.sh
+source "$HERE/lib/persona.sh"
 
 # ---------------------------------------------------------------------------
 # Global flag parsing
@@ -101,6 +103,7 @@ label_to_subcommand() {
 # ---------------------------------------------------------------------------
 run_sync() {
   phase_gentle
+  phase_persona
   if [ "${SKIP_CODEX:-0}" = "1" ]; then
     printf '[skip] codex phase skipped (--skip-codex)\n'
   else
@@ -121,6 +124,7 @@ print_usage() {
   printf 'Usage: agent-stack [--dry-run] [--yes] [--skip-codex] <subcommand>\n'
   printf '\nValid subcommands:\n'
   printf '  bootstrap     Install and configure all agents from scratch\n'
+  printf '  persona       Upsert Gentleman-CO override into the 3 agent configs\n'
   printf '  sync          Run gentle -> codex -> overlay\n'
   printf '  overlay       Pull clean-code-lab + intent-overlay install\n'
   printf '  codex         Pull codex repo + install.sh\n'
@@ -138,6 +142,7 @@ dispatch() {
   local subcommand="$1"
   case "$subcommand" in
     bootstrap)   phase_bootstrap ;;
+    persona)     phase_persona ;;
     sync)        run_sync ;;
     overlay)     phase_overlay ;;
     codex)       phase_codex ;;

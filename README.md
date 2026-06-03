@@ -48,12 +48,13 @@ gentle-ai login
 agent-stack
 
 # Direct subcommands (script/cron safe)
-agent-stack sync              # gentle -> codex -> overlay
+agent-stack sync              # gentle -> persona -> codex -> overlay
+agent-stack persona           # upsert Gentleman-CO override into the 3 agent configs
 agent-stack overlay           # pull clean-code-lab + intent-overlay install
 agent-stack codex             # pull codex repo + install.sh
 agent-stack gentle            # gentle-ai upgrade && sync
 agent-stack update-clis       # update all 4 CLI binaries
-agent-stack all               # update-clis -> gentle -> codex -> overlay
+agent-stack all               # update-clis -> gentle -> persona -> codex -> overlay
 agent-stack doctor            # aggregated health report
 agent-stack bootstrap         # re-run the full bootstrap
 ```
@@ -83,7 +84,7 @@ When run without arguments and `gum` is installed:
 | Label | Subcommand | Action |
 |-------|-----------|--------|
 | Instalación inicial | `bootstrap` | Full install from scratch |
-| Sync completo (configs) | `sync` | gentle → codex → overlay |
+| Sync completo (configs) | `sync` | gentle → persona → codex → overlay |
 | Solo overlay | `overlay` | pull clean-code-lab + intent-overlay install |
 | Solo Codex (SDD/MCP) | `codex` | pull codex repo + install.sh |
 | Solo Gentle | `gentle` | gentle-ai upgrade && sync |
@@ -97,6 +98,7 @@ When run without arguments and `gum` is installed:
 | Phase | Commands run |
 |-------|-------------|
 | `gentle` | `gentle-ai upgrade`, `gentle-ai sync` |
+| `persona` | Upserts `<!-- persona-co:start/end -->` block from `persona/gentleman-co.md` into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.override.md`, `~/.config/opencode/AGENTS.md`. Idempotent. Run automatically after `gentle` in every `sync`. |
 | `codex` | `git pull` → `install.sh` → `codex-sdd-sync --mcp-audit` |
 | `overlay` | `git pull` → `intent-overlay install` |
 | `update-clis` | `claude update` (if present), `codex update` (if present), `opencode upgrade` (if present), `gentle-ai upgrade` (if present) |
@@ -135,6 +137,7 @@ overlay | ~/.agent-stack/repos/clean-code-lab             | https://github.com/S
 bash agent-stack.test.sh
 bash lib/common.test.sh
 bash lib/gentle.test.sh
+bash lib/persona.test.sh
 bash lib/overlay.test.sh
 bash lib/codex.test.sh
 bash lib/clis.test.sh
