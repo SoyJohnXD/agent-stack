@@ -93,7 +93,7 @@ ensure_repo() {
   local remote="$2"
   local branch="$3"
 
-  if [ -d "$local_path/.git" ] || [ -d "$local_path" ] && git -C "$local_path" rev-parse --git-dir >/dev/null 2>&1; then
+  if [ -d "$local_path/.git" ] || { [ -d "$local_path" ] && git -C "$local_path" rev-parse --git-dir >/dev/null 2>&1; }; then
     run git -C "$local_path" pull origin "$branch"
   else
     run git clone --branch "$branch" "$remote" "$local_path"

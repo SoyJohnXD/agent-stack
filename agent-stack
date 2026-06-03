@@ -57,7 +57,7 @@ MENU_GENTLE="Solo Gentle"
 MENU_CLIS="Actualizar CLIs (binarios)"
 MENU_ALL="TODO (CLIs + sync)"
 MENU_DOCTOR="Doctor"
-MENU_EXIT="Salir / Exit"
+MENU_EXIT="Salir"
 
 menu_choose() {
   if ! command -v gum >/dev/null 2>&1; then
@@ -138,7 +138,7 @@ dispatch() {
     update-clis) phase_update_clis ;;
     all)         run_all ;;
     doctor)      phase_doctor ;;
-    salir|exit|"Salir / Exit") exit 0 ;;
+    salir|exit|"Salir") exit 0 ;;
     *)
       printf 'Unknown subcommand: %s\n\n' "$subcommand" >&2
       print_usage >&2
