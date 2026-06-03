@@ -1,23 +1,47 @@
 # agent-stack
 
 A single bash orchestrator for keeping AI agent CLIs and their configurations up to date.
-Runs an interactive menu (requires `gum`) or dispatches directly via subcommands (cron/script safe).
 
-## Install
+## Quick install
 
 ```bash
-# Clone or copy the repo
-git clone https://github.com/SoyJohnXD/agent-stack.git ~/Documents/personal/agent-stack
-cd ~/Documents/personal/agent-stack
-
-# Make the entrypoint executable
-chmod +x agent-stack
-
-# Optional: add to PATH or create a symlink
-ln -s "$PWD/agent-stack" ~/.local/bin/agent-stack
+curl -fsSL https://raw.githubusercontent.com/SoyJohnXD/agent-stack/main/bootstrap.sh | bash
 ```
 
-## Usage
+This one-liner:
+- Clones agent-stack to `~/.agent-stack/`
+- Clones codex-sdd-gentle-installer and runs its full install
+- Clones clean-code-lab and runs intent-overlay install
+- Creates `~/.local/bin/agent-stack` symlink
+- Installs gum (interactive menu, best-effort)
+
+**Not installed by default**: Claude Code. Add `--with-claude` to include it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SoyJohnXD/agent-stack/main/bootstrap.sh | bash -s -- --with-claude
+```
+
+### Bootstrap flags
+
+| Flag | Effect |
+|------|--------|
+| `--dry-run` | Print planned actions; execute nothing |
+| `--yes` | Forward `--yes` to install-full.sh (non-interactive) |
+| `--skip-codex` | Skip codex install-full.sh step |
+| `--with-claude` | Also install Claude Code (opt-in) |
+
+## Manual auth steps
+
+After bootstrap completes, log in to each CLI:
+
+```bash
+claude login
+codex login
+opencode login
+gentle-ai login
+```
+
+## Daily usage
 
 ```bash
 # Interactive menu (requires gum)
@@ -31,6 +55,7 @@ agent-stack gentle            # gentle-ai upgrade && sync
 agent-stack update-clis       # update all 4 CLI binaries
 agent-stack all               # update-clis -> gentle -> codex -> overlay
 agent-stack doctor            # aggregated health report
+agent-stack bootstrap         # re-run the full bootstrap
 ```
 
 ## Global Flags
@@ -57,6 +82,7 @@ When run without arguments and `gum` is installed:
 
 | Label | Subcommand | Action |
 |-------|-----------|--------|
+| Instalación inicial | `bootstrap` | Full install from scratch |
 | Sync completo (configs) | `sync` | gentle → codex → overlay |
 | Solo overlay | `overlay` | pull clean-code-lab + intent-overlay install |
 | Solo Codex (SDD/MCP) | `codex` | pull codex repo + install.sh |
@@ -66,21 +92,6 @@ When run without arguments and `gum` is installed:
 | Doctor | `doctor` | health report |
 | Salir / Exit | — | exit 0 |
 
-## Manifest Format
-
-`repos.manifest` defines managed repos (one per line):
-
-```
-# name | local_path | remote | branch
-codex   | ~/Documents/osoria/codex-sdd-gentle-installer    | https://github.com/SoyJohnXD/codex-sdd-gentle-installer.git | main
-overlay | ~/Documents/personal/clean-code-lab              | https://github.com/SoyJohnXD/clean-code-lab.git             | main
-```
-
-- Lines starting with `#` and blank lines are ignored.
-- `~` in `local_path` is expanded to `$HOME`.
-- If `local_path` does not exist, it is cloned from `remote` at `branch`.
-- If it exists, `git pull origin <branch>` is run before the installer.
-
 ## What gets updated
 
 | Phase | Commands run |
@@ -88,7 +99,7 @@ overlay | ~/Documents/personal/clean-code-lab              | https://github.com/
 | `gentle` | `gentle-ai upgrade`, `gentle-ai sync` |
 | `codex` | `git pull` → `install.sh` → `codex-sdd-sync --mcp-audit` |
 | `overlay` | `git pull` → `intent-overlay install` |
-| `update-clis` | `claude update`, `codex update`, `opencode upgrade`, `gentle-ai upgrade` |
+| `update-clis` | `claude update` (if present), `codex update` (if present), `opencode upgrade` (if present), `gentle-ai upgrade` (if present) |
 
 ## Doctor checks
 
@@ -103,20 +114,20 @@ overlay | ~/Documents/personal/clean-code-lab              | https://github.com/
 - `git --version` (required)
 - `gum --version` (optional — menu won't work without it but all subcommands still work)
 
-## Codex repo migration note
+## Manifest
 
-The codex installer repo was migrated from `nicolasvosoria/codex-sdd-gentle-installer` to
-`SoyJohnXD/codex-sdd-gentle-installer`.
+`repos.manifest` defines managed repos (one per line):
 
-If you have the original repo cloned locally, update its remote:
-
-```bash
-git -C ~/Documents/osoria/codex-sdd-gentle-installer \
-  remote set-url origin https://github.com/SoyJohnXD/codex-sdd-gentle-installer.git
+```
+# name | local_path | remote | branch
+codex   | ~/.agent-stack/repos/codex-sdd-gentle-installer | https://github.com/SoyJohnXD/codex-sdd-gentle-installer.git | main
+overlay | ~/.agent-stack/repos/clean-code-lab             | https://github.com/SoyJohnXD/clean-code-lab.git             | main
 ```
 
-Deleting the original `nicolasvosoria`-owned repo is an external manual action and requires
-owner-level access to that GitHub account (out of scope here).
+- Lines starting with `#` and blank lines are ignored.
+- `~` in `local_path` is expanded to `$HOME`.
+- If `local_path` does not exist, it is cloned from `remote` at `branch`.
+- If it exists, `git pull origin <branch>` is run.
 
 ## Tests
 
@@ -128,6 +139,7 @@ bash lib/overlay.test.sh
 bash lib/codex.test.sh
 bash lib/clis.test.sh
 bash lib/doctor.test.sh
+bash bootstrap.test.sh
 ```
 
 All tests use a throwaway `$HOME` via `mktemp -d` and stubbed binaries on PATH — no real mutations occur during testing.

@@ -223,6 +223,48 @@ esac
 
 rm -rf "$TEST_HOME5"
 
+# ---------------------------------------------------------------------------
+# T1.1: ~/.agent-stack paths expand correctly via parse_manifest + expand_path
+# ---------------------------------------------------------------------------
+TEST_HOME6=$(new_home)
+MANIFEST2=$(mktemp)
+cat > "$MANIFEST2" <<'EOF'
+codex   | ~/.agent-stack/repos/codex-sdd-gentle-installer | https://github.com/SoyJohnXD/codex-sdd-gentle-installer.git | main
+overlay | ~/.agent-stack/repos/clean-code-lab             | https://github.com/SoyJohnXD/clean-code-lab.git             | main
+EOF
+
+PARSED2=$(
+  export HOME="$TEST_HOME6"
+  export DRY_RUN=0
+  source "$COMMON"
+  parse_manifest "$MANIFEST2"
+)
+
+CODEX_LINE=$(printf '%s\n' "$PARSED2" | head -n1)
+IFS='|' read -r _ codex_path _ _ <<< "$CODEX_LINE"
+codex_path=$(printf '%s' "$codex_path" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+case "$codex_path" in
+  "$TEST_HOME6/.agent-stack/repos/codex-sdd-gentle-installer")
+    pass "expand_path resolves ~/.agent-stack/repos/codex-sdd-gentle-installer to \$HOME equivalent"
+    ;;
+  *)
+    fail "expand_path should resolve to \$HOME/.agent-stack/repos/codex-sdd-gentle-installer, got '$codex_path'"
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
+# T1.2: no parsed path contains the substring 'Documents'
+# ---------------------------------------------------------------------------
+HAS_DOCUMENTS=$(printf '%s\n' "$PARSED2" | grep 'Documents' 2>/dev/null || true)
+if [ -z "$HAS_DOCUMENTS" ]; then
+  pass "no parsed local_path from portable manifest contains 'Documents'"
+else
+  fail "parsed paths should NOT contain 'Documents', got: $HAS_DOCUMENTS"
+fi
+
+rm -f "$MANIFEST2"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else

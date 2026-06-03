@@ -20,6 +20,8 @@ source "$HERE/lib/codex.sh"
 source "$HERE/lib/clis.sh"
 # shellcheck source=lib/doctor.sh
 source "$HERE/lib/doctor.sh"
+# shellcheck source=lib/bootstrap.sh
+source "$HERE/lib/bootstrap.sh"
 
 # ---------------------------------------------------------------------------
 # Global flag parsing
@@ -50,6 +52,7 @@ parse_global_flags() {
 # ---------------------------------------------------------------------------
 # Menu (gum)
 # ---------------------------------------------------------------------------
+MENU_BOOTSTRAP="Instalación inicial"
 MENU_SYNC="Sync completo (configs)"
 MENU_OVERLAY="Solo overlay"
 MENU_CODEX="Solo Codex (SDD/MCP)"
@@ -66,6 +69,7 @@ menu_choose() {
   fi
 
   gum choose \
+    "$MENU_BOOTSTRAP" \
     "$MENU_SYNC" \
     "$MENU_OVERLAY" \
     "$MENU_CODEX" \
@@ -79,15 +83,16 @@ menu_choose() {
 label_to_subcommand() {
   local label="$1"
   case "$label" in
-    "$MENU_SYNC")    printf 'sync' ;;
-    "$MENU_OVERLAY") printf 'overlay' ;;
-    "$MENU_CODEX")   printf 'codex' ;;
-    "$MENU_GENTLE")  printf 'gentle' ;;
-    "$MENU_CLIS")    printf 'update-clis' ;;
-    "$MENU_ALL")     printf 'all' ;;
-    "$MENU_DOCTOR")  printf 'doctor' ;;
-    "$MENU_EXIT")    printf 'exit' ;;
-    *)               printf '%s' "$label" ;;
+    "$MENU_BOOTSTRAP") printf 'bootstrap' ;;
+    "$MENU_SYNC")      printf 'sync' ;;
+    "$MENU_OVERLAY")   printf 'overlay' ;;
+    "$MENU_CODEX")     printf 'codex' ;;
+    "$MENU_GENTLE")    printf 'gentle' ;;
+    "$MENU_CLIS")      printf 'update-clis' ;;
+    "$MENU_ALL")       printf 'all' ;;
+    "$MENU_DOCTOR")    printf 'doctor' ;;
+    "$MENU_EXIT")      printf 'exit' ;;
+    *)                 printf '%s' "$label" ;;
   esac
 }
 
@@ -115,6 +120,7 @@ run_all() {
 print_usage() {
   printf 'Usage: agent-stack [--dry-run] [--yes] [--skip-codex] <subcommand>\n'
   printf '\nValid subcommands:\n'
+  printf '  bootstrap     Install and configure all agents from scratch\n'
   printf '  sync          Run gentle -> codex -> overlay\n'
   printf '  overlay       Pull clean-code-lab + intent-overlay install\n'
   printf '  codex         Pull codex repo + install.sh\n'
@@ -131,6 +137,7 @@ print_usage() {
 dispatch() {
   local subcommand="$1"
   case "$subcommand" in
+    bootstrap)   phase_bootstrap ;;
     sync)        run_sync ;;
     overlay)     phase_overlay ;;
     codex)       phase_codex ;;

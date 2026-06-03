@@ -159,6 +159,75 @@ fi
 rm -rf "$STUB3" "$TEST_HOME3"
 rm -f "$RECORD3"
 
+# ---------------------------------------------------------------------------
+# T2.1: absent claude → skip message, exit 0
+# T2.2: present codex/opencode/gentle-ai → update/upgrade called
+# T2.3: absent claude → claude update NOT in record
+# ---------------------------------------------------------------------------
+TEST_HOME4=$(new_home)
+RECORD4=$(mktemp)
+
+# Stub bin WITHOUT claude, but WITH the other three
+# Use a wrapper script rather than subshell PATH isolation so bash built-ins remain available.
+# Place a fake 'claude' that exits 1 (simulates command-not-found) in the stub dir using a
+# sentinel approach: wrap in a helper script that resets PATH for command -v resolution only.
+BASH_BIN=$(command -v bash)
+STUB4=$(mktemp -d)
+for cmd in codex opencode gentle-ai; do
+  # Use absolute shebang so stub works even with minimal PATH
+  cat > "$STUB4/$cmd" <<EOF
+#!$BASH_BIN
+echo "$cmd \$*" >> "$RECORD4"
+exit 0
+EOF
+  chmod +x "$STUB4/$cmd"
+done
+
+# Run via a wrapper that exposes only STUB4 on PATH (so system claude is invisible)
+WRAPPER4=$(mktemp)
+cat > "$WRAPPER4" <<WRAPPER
+#!$BASH_BIN
+set -u
+export PATH="$STUB4"
+export HOME="$TEST_HOME4"
+export DRY_RUN=0
+source "$HERE/common.sh"
+source "$HERE/clis.sh"
+phase_update_clis
+WRAPPER
+chmod +x "$WRAPPER4"
+
+SKIP_OUT=$("$BASH_BIN" "$WRAPPER4")
+
+case "$SKIP_OUT" in
+  *"[skip] claude not installed"*)
+    pass "absent claude: output contains '[skip] claude not installed'"
+    ;;
+  *)
+    fail "absent claude: should print '[skip] claude not installed' (got: $SKIP_OUT)"
+    ;;
+esac
+
+# T2.2: other three were still invoked
+CODEX_CALLED=$(grep "^codex update$" "$RECORD4" | head -1)
+OPENCODE_CALLED=$(grep "^opencode upgrade$" "$RECORD4" | head -1)
+GENTLE_CALLED=$(grep "^gentle-ai upgrade$" "$RECORD4" | head -1)
+
+[ -n "$CODEX_CALLED" ]   && pass "absent claude: codex update still runs" || fail "absent claude: codex update should still run (record: $(cat "$RECORD4"))"
+[ -n "$OPENCODE_CALLED" ] && pass "absent claude: opencode upgrade still runs" || fail "absent claude: opencode upgrade should still run"
+[ -n "$GENTLE_CALLED" ]   && pass "absent claude: gentle-ai upgrade still runs" || fail "absent claude: gentle-ai upgrade should still run"
+
+# T2.3: claude update NOT in record (binary was absent, only skip message printed)
+CLAUDE_IN_RECORD=$(grep "^claude" "$RECORD4" 2>/dev/null || true)
+if [ -z "$CLAUDE_IN_RECORD" ]; then
+  pass "absent claude: 'claude update' was NOT executed (not in record)"
+else
+  fail "absent claude: 'claude update' should NOT be in record, got: $CLAUDE_IN_RECORD"
+fi
+
+rm -rf "$STUB4" "$TEST_HOME4"
+rm -f "$RECORD4"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else

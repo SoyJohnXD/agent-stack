@@ -185,6 +185,105 @@ done
 
 rm -rf "$STUB3" "$RECORD3" "$TEST_HOME3"
 
+# ---------------------------------------------------------------------------
+# T4.1: agent-stack bootstrap --dry-run exits 0 and produces dry-run markers
+# ---------------------------------------------------------------------------
+TEST_HOME_BS=$(new_home)
+GUM_RECORD_BS=$(mktemp)
+STUB_BS=$(new_stub_bin "$GUM_RECORD_BS")
+
+BS_OUT=$(
+  export PATH="$STUB_BS:$PATH"
+  export HOME="$TEST_HOME_BS"
+  export DRY_RUN=1
+  bash "$ENTRYPOINT" bootstrap --dry-run 2>&1
+)
+BS_EXIT=$?
+
+[ "$BS_EXIT" = "0" ] && pass "bootstrap subcommand: exits 0 with --dry-run" || fail "bootstrap subcommand: should exit 0, got $BS_EXIT"
+
+case "$BS_OUT" in
+  *"[dry-run]"*) pass "bootstrap subcommand: --dry-run produces [dry-run] markers" ;;
+  *) fail "bootstrap subcommand: should produce [dry-run] markers (got: $(printf '%s\n' "$BS_OUT" | head -3))" ;;
+esac
+
+rm -rf "$STUB_BS" "$TEST_HOME_BS"
+rm -f "$GUM_RECORD_BS"
+
+# ---------------------------------------------------------------------------
+# T4.2: gum choose arg list includes "Instalación inicial"
+# ---------------------------------------------------------------------------
+TEST_HOME_MI=$(new_home)
+GUM_RECORD_MI=$(mktemp)
+STUB_MI=$(new_stub_bin "$GUM_RECORD_MI")
+
+(
+  export PATH="$STUB_MI:$PATH"
+  export HOME="$TEST_HOME_MI"
+  export DRY_RUN=1
+  export GUM_RECORD_FILE="$GUM_RECORD_MI"
+  export GUM_CHOICE="Salir"
+  bash "$ENTRYPOINT" 2>/dev/null
+)
+
+GUM_ARGS_MI=$(grep "gum choose" "$GUM_RECORD_MI" 2>/dev/null || echo "")
+case "$GUM_ARGS_MI" in
+  *"Instalación inicial"*) pass "menu includes 'Instalación inicial'" ;;
+  *) fail "menu should include 'Instalación inicial' (got: $GUM_ARGS_MI)" ;;
+esac
+
+rm -rf "$STUB_MI" "$TEST_HOME_MI"
+rm -f "$GUM_RECORD_MI"
+
+# ---------------------------------------------------------------------------
+# T4.3: Selecting "Instalación inicial" dispatches to bootstrap
+# ---------------------------------------------------------------------------
+TEST_HOME_SEL=$(new_home)
+GUM_RECORD_SEL=$(mktemp)
+STUB_SEL=$(new_stub_bin "$GUM_RECORD_SEL")
+
+SEL_OUT=$(
+  export PATH="$STUB_SEL:$PATH"
+  export HOME="$TEST_HOME_SEL"
+  export DRY_RUN=1
+  export GUM_RECORD_FILE="$GUM_RECORD_SEL"
+  export GUM_CHOICE="Instalación inicial"
+  bash "$ENTRYPOINT" 2>&1
+)
+SEL_EXIT=$?
+
+[ "$SEL_EXIT" = "0" ] && pass "selecting 'Instalación inicial': exits 0" || fail "selecting 'Instalación inicial': should exit 0, got $SEL_EXIT"
+
+case "$SEL_OUT" in
+  *"[dry-run]"*|*"bootstrap"*|*"Bootstrap"*)
+    pass "selecting 'Instalación inicial': dispatches to bootstrap (dry-run output present)"
+    ;;
+  *)
+    fail "selecting 'Instalación inicial': should dispatch to bootstrap (got: $(printf '%s\n' "$SEL_OUT" | head -3))"
+    ;;
+esac
+
+rm -rf "$STUB_SEL" "$TEST_HOME_SEL"
+rm -f "$GUM_RECORD_SEL"
+
+# ---------------------------------------------------------------------------
+# T4.4: 'bootstrap' is a valid subcommand (exits 0 with stubs + dry-run)
+# ---------------------------------------------------------------------------
+TEST_HOME_BSUB=$(new_home)
+RECORD_BSUB=$(mktemp)
+STUB_BSUB=$(new_stub_bin "$RECORD_BSUB")
+
+(
+  export PATH="$STUB_BSUB:$PATH"
+  export HOME="$TEST_HOME_BSUB"
+  bash "$ENTRYPOINT" bootstrap --dry-run >/dev/null 2>&1
+)
+BSUB_EXIT=$?
+[ "$BSUB_EXIT" = "0" ] && pass "subcommand 'bootstrap' dispatches and exits 0" || fail "subcommand 'bootstrap' should exit 0, got $BSUB_EXIT"
+
+rm -rf "$STUB_BSUB" "$TEST_HOME_BSUB"
+rm -f "$RECORD_BSUB"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else
