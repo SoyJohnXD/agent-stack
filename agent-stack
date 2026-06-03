@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# agent-stack — orchestrate AI agent CLI updates and config syncs
+# Usage: agent-stack [--dry-run] [--yes] [--skip-codex] <subcommand>
+#        agent-stack  (no args: interactive gum menu)
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+export MANIFEST_FILE="$HERE/repos.manifest"
+
+# Source the shared lib
+# shellcheck source=lib/common.sh
+source "$HERE/lib/common.sh"
+# shellcheck source=lib/gentle.sh
+source "$HERE/lib/gentle.sh"
+# shellcheck source=lib/overlay.sh
+source "$HERE/lib/overlay.sh"
+# shellcheck source=lib/codex.sh
+source "$HERE/lib/codex.sh"
+# shellcheck source=lib/clis.sh
+source "$HERE/lib/clis.sh"
+# shellcheck source=lib/doctor.sh
+source "$HERE/lib/doctor.sh"
+
+# ---------------------------------------------------------------------------
+# Global flag parsing
+# Sets: DRY_RUN, ASSUME_YES, SKIP_CODEX
+# Strips flags from positional args; leaves subcommand as $1 (or empty)
+# ---------------------------------------------------------------------------
+parse_global_flags() {
+  local args=()
+  DRY_RUN="${DRY_RUN:-0}"
+  ASSUME_YES="${ASSUME_YES:-0}"
+  SKIP_CODEX="${SKIP_CODEX:-0}"
+
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run)    DRY_RUN=1 ;;
+      --yes)        ASSUME_YES=1 ;;
+      --skip-codex) SKIP_CODEX=1 ;;
+      *)            args+=("$arg") ;;
+    esac
+  done
+
+  export DRY_RUN ASSUME_YES SKIP_CODEX
+
+  # Return positional args via global POSITIONAL_ARGS
+  POSITIONAL_ARGS=("${args[@]+"${args[@]}"}")
+}
+
+# ---------------------------------------------------------------------------
+# Menu (gum)
+# ---------------------------------------------------------------------------
+MENU_SYNC="Sync completo (configs)"
+MENU_OVERLAY="Solo overlay"
+MENU_CODEX="Solo Codex (SDD/MCP)"
+MENU_GENTLE="Solo Gentle"
+MENU_CLIS="Actualizar CLIs (binarios)"
+MENU_ALL="TODO (CLIs + sync)"
+MENU_DOCTOR="Doctor"
+MENU_EXIT="Salir / Exit"
+
+menu_choose() {
+  if ! command -v gum >/dev/null 2>&1; then
+    print_usage
+    exit 0
+  fi
+
+  gum choose \
+    "$MENU_SYNC" \
+    "$MENU_OVERLAY" \
+    "$MENU_CODEX" \
+    "$MENU_GENTLE" \
+    "$MENU_CLIS" \
+    "$MENU_ALL" \
+    "$MENU_DOCTOR" \
+    "$MENU_EXIT"
+}
+
+label_to_subcommand() {
+  local label="$1"
+  case "$label" in
+    "$MENU_SYNC")    printf 'sync' ;;
+    "$MENU_OVERLAY") printf 'overlay' ;;
+    "$MENU_CODEX")   printf 'codex' ;;
+    "$MENU_GENTLE")  printf 'gentle' ;;
+    "$MENU_CLIS")    printf 'update-clis' ;;
+    "$MENU_ALL")     printf 'all' ;;
+    "$MENU_DOCTOR")  printf 'doctor' ;;
+    "$MENU_EXIT")    printf 'exit' ;;
+    *)               printf '%s' "$label" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Composite runners
+# ---------------------------------------------------------------------------
+run_sync() {
+  phase_gentle
+  if [ "${SKIP_CODEX:-0}" = "1" ]; then
+    printf '[skip] codex phase skipped (--skip-codex)\n'
+  else
+    phase_codex
+  fi
+  phase_overlay
+}
+
+run_all() {
+  phase_update_clis
+  run_sync
+}
+
+# ---------------------------------------------------------------------------
+# Usage
+# ---------------------------------------------------------------------------
+print_usage() {
+  printf 'Usage: agent-stack [--dry-run] [--yes] [--skip-codex] <subcommand>\n'
+  printf '\nValid subcommands:\n'
+  printf '  sync          Run gentle -> codex -> overlay\n'
+  printf '  overlay       Pull clean-code-lab + intent-overlay install\n'
+  printf '  codex         Pull codex repo + install.sh\n'
+  printf '  gentle        gentle-ai upgrade && sync\n'
+  printf '  update-clis   Update claude, codex, opencode, gentle-ai\n'
+  printf '  all           update-clis -> gentle -> codex -> overlay\n'
+  printf '  doctor        Aggregated health report\n'
+  printf '\nFlags (any position): --dry-run  --yes  --skip-codex\n'
+}
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+dispatch() {
+  local subcommand="$1"
+  case "$subcommand" in
+    sync)        run_sync ;;
+    overlay)     phase_overlay ;;
+    codex)       phase_codex ;;
+    gentle)      phase_gentle ;;
+    update-clis) phase_update_clis ;;
+    all)         run_all ;;
+    doctor)      phase_doctor ;;
+    salir|exit|"Salir / Exit") exit 0 ;;
+    *)
+      printf 'Unknown subcommand: %s\n\n' "$subcommand" >&2
+      print_usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+main() {
+  parse_global_flags "$@"
+
+  local subcommand="${POSITIONAL_ARGS[0]:-}"
+
+  if [ -z "$subcommand" ]; then
+    local chosen
+    chosen=$(menu_choose)
+    subcommand=$(label_to_subcommand "$chosen")
+  fi
+
+  dispatch "$subcommand"
+}
+
+main "$@"

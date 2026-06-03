@@ -1,0 +1,3 @@
+# name | local_path | remote | branch
+codex   | ~/Documents/osoria/codex-sdd-gentle-installer    | https://github.com/SoyJohnXD/codex-sdd-gentle-installer.git | main
+overlay | ~/Documents/personal/clean-code-lab              | https://github.com/SoyJohnXD/clean-code-lab.git             | main
