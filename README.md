@@ -31,6 +31,31 @@ curl -fsSL https://raw.githubusercontent.com/SoyJohnXD/agent-stack/main/bootstra
 | `--skip-codex` | Skip codex install-full.sh step |
 | `--with-claude` | Also install Claude Code (opt-in) |
 
+## Platform support
+
+| Platform | Status | Install |
+|---|---|---|
+| Linux | ✅ | `curl -fsSL https://raw.githubusercontent.com/SoyJohnXD/agent-stack/main/bootstrap.sh \| bash` |
+| macOS | ✅ | Same as Linux — requires Homebrew for best experience |
+| Windows (native) | ✅ | See Windows install below |
+
+### macOS prerequisites
+- Homebrew recommended: `brew install gum` (auto-installed if absent)
+- After install, add to shell: `export PATH="$HOME/.local/bin:$PATH"` in `~/.zshrc`
+
+### Windows prerequisites
+1. PowerShell 5.1+ (built-in on Windows 10/11)
+2. Git for Windows: https://git-scm.com/download/win
+3. Python 3: https://python.org/downloads/
+4. Run bootstrap:
+```powershell
+# Set the agent-stack lib path (required for PS1 scripts)
+$env:AGENT_STACK_LIB = "$env:USERPROFILE\.agent-stack\lib"
+powershell -ExecutionPolicy Bypass -File bootstrap.ps1
+```
+
+For OpenCode install on Windows, `bootstrap.ps1` tries winget → scoop → choco automatically.
+
 ## Manual auth steps
 
 After bootstrap completes, log in to each CLI:

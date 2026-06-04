@@ -19,9 +19,9 @@
     update-clis   Update claude, codex, opencode, gentle-ai
     all           update-clis -> sync
     doctor        Aggregated health report
-    persona       [stub] not yet implemented on Windows
-    codex         [stub] not yet implemented on Windows (SDD-4)
-    overlay       [stub] not yet implemented on Windows (SDD-5)
+    persona       Apply persona config to claude/codex/opencode config files
+    codex         Clone/update codex repo, run install.ps1, run codex-sdd-sync
+    overlay       Clone/update overlay repo, run intent-overlay.ps1 install
     exit|salir    Exit cleanly
 
   Entry guard: main() is only called when the script is executed directly.
@@ -40,27 +40,12 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\clis.ps1"
 . "$PSScriptRoot\lib\doctor.ps1"
 . "$PSScriptRoot\lib\bootstrap.ps1"
+. "$PSScriptRoot\lib\persona.ps1"
+. "$PSScriptRoot\lib\codex.ps1"
+. "$PSScriptRoot\lib\overlay.ps1"
 
 # Point phases at the manifest sitting next to this script.
 $env:MANIFEST_FILE = Join-Path $PSScriptRoot 'repos.manifest'
-
-# ---------------------------------------------------------------------------
-# Deferred phase stubs
-# ---------------------------------------------------------------------------
-function phase_persona {
-    Write-Warning 'persona phase not yet implemented on Windows (separate SDD)'
-    return 0
-}
-
-function phase_codex {
-    Write-Warning 'codex phase not yet implemented on Windows (SDD-4)'
-    return 0
-}
-
-function phase_overlay {
-    Write-Warning 'overlay phase not yet implemented on Windows (SDD-5)'
-    return 0
-}
 
 # ---------------------------------------------------------------------------
 # Get-PositionalArgs — flag parsing

@@ -11,9 +11,9 @@
     2. Install gum.exe (GitHub Releases API -> zip -> launcher-dir).
     3. Install launcher shim via Install-PathShim (SDD-2).
     4. Clone / pull every repo listed in repos.manifest.
-    5. Codex install — deferred to SDD-4 (stub warning).
-    6. Overlay install — deferred to SDD-5 (stub warning).
-    7. Persona apply — deferred (stub warning).
+    5. Codex install — clone/update repo, run install.ps1, run codex-sdd-sync.
+    6. Overlay install — clone/update repo, run intent-overlay.ps1 install.
+    7. Persona apply — upsert persona block into claude/codex/opencode config files.
     8. Print auth steps.
 
   Flags (any position):
@@ -34,6 +34,9 @@ $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\lib\platform-windows.ps1"
 . "$PSScriptRoot\lib\common.ps1"
+. "$PSScriptRoot\lib\persona.ps1"
+. "$PSScriptRoot\lib\codex.ps1"
+. "$PSScriptRoot\lib\overlay.ps1"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -178,14 +181,14 @@ function main {
         Write-Warning "repos.manifest not found at $manifestPath — skipping repo clones."
     }
 
-    # Step 5: codex install — deferred
-    Write-Warning 'codex phase not yet implemented on Windows (SDD-4)'
+    # Step 5: codex install
+    phase_codex
 
-    # Step 6: overlay install — deferred
-    Write-Warning 'overlay phase not yet implemented on Windows (SDD-5)'
+    # Step 6: overlay install
+    phase_overlay
 
-    # Step 7: persona apply — deferred
-    Write-Warning 'persona phase not yet implemented on Windows (separate SDD)'
+    # Step 7: persona apply
+    phase_persona
 
     # Step 8: Claude Code install (opt-in only)
     if ($withClaude) {

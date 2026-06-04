@@ -66,3 +66,34 @@ agent-stack doctor
 ```
 
 Debe mostrar todas las dependencias como `OK`. Si algo falla, el doctor indica qué está faltando.
+
+---
+
+## Windows
+
+### Prerequisitos
+- PowerShell 5.1+ (incluido en Windows 10/11)
+- Git for Windows: https://git-scm.com/download/win
+- Python 3: https://python.org/downloads/
+- Opcional (mejora la experiencia): winget, scoop o chocolatey para instalar OpenCode automáticamente
+
+### Instalación
+```powershell
+# 1. Clonar el repo
+git clone https://github.com/SoyJohnXD/agent-stack.git "$env:USERPROFILE\.agent-stack"
+
+# 2. Configurar la ruta de librerías
+$env:AGENT_STACK_LIB = "$env:USERPROFILE\.agent-stack\lib"
+
+# 3. Ejecutar bootstrap
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agent-stack\bootstrap.ps1"
+```
+
+### Después de instalar
+- Abrí una **nueva** ventana de PowerShell — el PATH se actualiza en sesiones nuevas
+- Verificá con: `agent-stack doctor`
+- El comando `agent-stack` invoca `agent-stack.ps1` desde `$env:LOCALAPPDATA\Programs\agent-stack\`
+
+### Variable de entorno importante
+`$env:AGENT_STACK_LIB` debe apuntar a la carpeta `lib/` del repo clonado.
+El bootstrap la configura automáticamente, pero si ejecutás scripts manualmente, asegurate de tenerla seteada.
