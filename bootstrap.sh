@@ -55,6 +55,42 @@ done
 export DRY_RUN ASSUME_YES SKIP_CODEX
 
 # ---------------------------------------------------------------------------
+# detect_platform — sets PLATFORM_OS (Linux|Darwin) and PLATFORM_ARCH (x86_64|arm64)
+# Uses uname -s and uname -m. Defaults to Linux/x86_64 on unknown systems.
+# WSL2 is Linux (correct: Linux x86_64 gum binary works there).
+# ---------------------------------------------------------------------------
+PLATFORM_OS=""
+PLATFORM_ARCH=""
+
+detect_platform() {
+  case "$(uname -s)" in
+    Darwin) PLATFORM_OS="Darwin" ;;
+    Linux)  PLATFORM_OS="Linux"  ;;
+    *)      PLATFORM_OS="Linux"  ;;  # safe default for unknown/WSL edge cases
+  esac
+  case "$(uname -m)" in
+    arm64|aarch64) PLATFORM_ARCH="arm64"  ;;
+    *)             PLATFORM_ARCH="x86_64" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# gum_latest_version — echoes the latest gum version tag (no v prefix).
+# Queries GitHub API; falls back to GUM_FALLBACK_VERSION if unavailable.
+# ---------------------------------------------------------------------------
+GUM_FALLBACK_VERSION="0.17.0"
+
+gum_latest_version() {
+  local ver
+  ver=$(curl -fsSL https://api.github.com/repos/charmbracelet/gum/releases/latest 2>/dev/null \
+    | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+  if [ -z "$ver" ]; then
+    ver="$GUM_FALLBACK_VERSION"
+  fi
+  printf '%s' "$ver"
+}
+
+# ---------------------------------------------------------------------------
 # install_gum — best-effort; returns 0 on failure
 # ---------------------------------------------------------------------------
 install_gum() {
@@ -64,7 +100,7 @@ install_gum() {
 
   printf '>>> Installing gum (interactive menu helper)...\n'
 
-  # macOS
+  # macOS/Linux — brew (primary path; unchanged)
   if command -v brew >/dev/null 2>&1; then
     run brew install gum && return 0 || true
   fi
@@ -84,9 +120,13 @@ install_gum() {
     run pacman -S --noconfirm gum 2>/dev/null && return 0 || true
   fi
 
-  # GitHub binary fallback
+  # GitHub binary fallback — platform-aware versioned URL
+  # gum assets use: gum_<VERSION>_<OS>_<ARCH>.tar.gz  (OS=Darwin|Linux, ARCH=arm64|x86_64)
+  # The release tag path uses v<VERSION>; the filename does NOT.
   if command -v curl >/dev/null 2>&1; then
-    local gum_url="https://github.com/charmbracelet/gum/releases/latest/download/gum_Linux_x86_64.tar.gz"
+    detect_platform
+    local gum_ver; gum_ver=$(gum_latest_version)
+    local gum_url="https://github.com/charmbracelet/gum/releases/download/v${gum_ver}/gum_${gum_ver}_${PLATFORM_OS}_${PLATFORM_ARCH}.tar.gz"
     local gum_tmp; gum_tmp=$(mktemp -d)
     run curl -fsSL "$gum_url" -o "$gum_tmp/gum.tar.gz" 2>/dev/null \
       && run tar -xzf "$gum_tmp/gum.tar.gz" -C "$gum_tmp" 2>/dev/null \
@@ -134,6 +174,8 @@ print_auth_steps() {
   printf '  agent-stack          # interactive menu\n'
   printf '  agent-stack all      # update everything non-interactively\n'
   printf '  agent-stack --help   # full usage\n'
+  printf '\nIf agent-stack is not found, add ~/.local/bin to PATH (zsh):\n'
+  printf '  export PATH="$HOME/.local/bin:$PATH"\n'
 }
 
 # ---------------------------------------------------------------------------
@@ -205,4 +247,4 @@ main() {
   log_finish "bootstrap"
 }
 
-main "$@"
+[ "${BASH_SOURCE[0]}" = "$0" ] && main "$@"

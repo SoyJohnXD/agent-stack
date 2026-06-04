@@ -79,6 +79,257 @@ EOF
   printf '%s' "$dir"
 }
 
+# ===========================================================================
+# Unit tests (source-mode): detect_platform, gum_latest_version, PATH guidance
+# These load bootstrap.sh in isolation — main() is guarded, will not execute.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# U1.1: detect_platform — Darwin arm64
+# ---------------------------------------------------------------------------
+(
+  # Stub uname before sourcing so detect_platform uses the stub
+  uname() { case "$1" in -s) echo "Darwin";; -m) echo "arm64";; esac }
+  export -f uname
+  # Source bootstrap.sh; main will not execute (source guard)
+  # shellcheck disable=SC1090
+  source "$BOOTSTRAP" 2>/dev/null || true
+  PLATFORM_OS=""; PLATFORM_ARCH=""
+  detect_platform
+  if [ "$PLATFORM_OS" = "Darwin" ] && [ "$PLATFORM_ARCH" = "arm64" ]; then
+    printf 'ok   - detect_platform: Darwin arm64 -> PLATFORM_OS=Darwin PLATFORM_ARCH=arm64\n'
+  else
+    printf 'FAIL - detect_platform: Darwin arm64 -> expected PLATFORM_OS=Darwin PLATFORM_ARCH=arm64, got PLATFORM_OS=%s PLATFORM_ARCH=%s\n' "$PLATFORM_OS" "$PLATFORM_ARCH"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U1.2: detect_platform — Darwin x86_64
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Darwin";; -m) echo "x86_64";; esac }
+  export -f uname
+  source "$BOOTSTRAP" 2>/dev/null || true
+  PLATFORM_OS=""; PLATFORM_ARCH=""
+  detect_platform
+  if [ "$PLATFORM_OS" = "Darwin" ] && [ "$PLATFORM_ARCH" = "x86_64" ]; then
+    printf 'ok   - detect_platform: Darwin x86_64 -> PLATFORM_OS=Darwin PLATFORM_ARCH=x86_64\n'
+  else
+    printf 'FAIL - detect_platform: Darwin x86_64 -> expected PLATFORM_OS=Darwin PLATFORM_ARCH=x86_64, got PLATFORM_OS=%s PLATFORM_ARCH=%s\n' "$PLATFORM_OS" "$PLATFORM_ARCH"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U1.3: detect_platform — Linux x86_64
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Linux";; -m) echo "x86_64";; esac }
+  export -f uname
+  source "$BOOTSTRAP" 2>/dev/null || true
+  PLATFORM_OS=""; PLATFORM_ARCH=""
+  detect_platform
+  if [ "$PLATFORM_OS" = "Linux" ] && [ "$PLATFORM_ARCH" = "x86_64" ]; then
+    printf 'ok   - detect_platform: Linux x86_64 -> PLATFORM_OS=Linux PLATFORM_ARCH=x86_64\n'
+  else
+    printf 'FAIL - detect_platform: Linux x86_64 -> expected PLATFORM_OS=Linux PLATFORM_ARCH=x86_64, got PLATFORM_OS=%s PLATFORM_ARCH=%s\n' "$PLATFORM_OS" "$PLATFORM_ARCH"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U2.1: gum_latest_version — returns tag from stubbed curl (no v prefix)
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Linux";; -m) echo "x86_64";; esac }
+  export -f uname
+  curl() {
+    # Simulate GitHub API response with tag_name
+    echo '{"tag_name": "v0.17.0", "name": "v0.17.0"}'
+  }
+  export -f curl
+  source "$BOOTSTRAP" 2>/dev/null || true
+  VER=$(gum_latest_version)
+  if [ "$VER" = "0.17.0" ]; then
+    printf 'ok   - gum_latest_version: stubbed curl returns 0.17.0 (no v prefix)\n'
+  else
+    printf 'FAIL - gum_latest_version: expected 0.17.0, got %s\n' "$VER"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U2.2: gum_latest_version — falls back to GUM_FALLBACK_VERSION when curl fails
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Linux";; -m) echo "x86_64";; esac }
+  export -f uname
+  curl() { return 1; }
+  export -f curl
+  source "$BOOTSTRAP" 2>/dev/null || true
+  VER=$(gum_latest_version)
+  if [ -n "$VER" ]; then
+    printf 'ok   - gum_latest_version: curl failure falls back to GUM_FALLBACK_VERSION (%s)\n' "$VER"
+  else
+    printf 'FAIL - gum_latest_version: expected fallback version, got empty string\n'
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U3.1: install_gum URL contains Darwin_arm64 on Darwin arm64 (brew absent)
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Darwin";; -m) echo "arm64";; esac }
+  export -f uname
+  # gum not installed
+  command() {
+    case "$*" in
+      "-v gum")  return 1 ;;
+      "-v brew") return 1 ;;
+      "-v curl") return 0 ;;
+      "-v apt-get") return 1 ;;
+      "-v yum") return 1 ;;
+      "-v pacman") return 1 ;;
+      *) builtin command "$@" ;;
+    esac
+  }
+  export -f command
+  CAPTURED_URL=""
+  curl() {
+    for arg in "$@"; do
+      case "$arg" in
+        https://github.com/charmbracelet/gum*) CAPTURED_URL="$arg" ;;
+        https://api.github.com*) echo '{"tag_name": "v0.17.0"}' ; return 0 ;;
+      esac
+    done
+    # For the tar download, return 0 silently (we only care about URL capture)
+    return 0
+  }
+  export -f curl
+  tar() { return 0; }
+  export -f tar
+  mkdir() { builtin mkdir -p "$@" 2>/dev/null || true; }
+  export -f mkdir
+  mv() { return 0; }
+  export -f mv
+  source "$BOOTSTRAP" 2>/dev/null || true
+  install_gum 2>/dev/null || true
+  if printf '%s' "$CAPTURED_URL" | grep -q "Darwin_arm64"; then
+    printf 'ok   - install_gum: Darwin arm64 URL contains Darwin_arm64\n'
+  else
+    printf 'FAIL - install_gum: Darwin arm64 URL should contain Darwin_arm64 (got: %s)\n' "$CAPTURED_URL"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U3.2: install_gum URL contains Darwin_x86_64 on Darwin x86_64 (brew absent)
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Darwin";; -m) echo "x86_64";; esac }
+  export -f uname
+  command() {
+    case "$*" in
+      "-v gum")  return 1 ;;
+      "-v brew") return 1 ;;
+      "-v curl") return 0 ;;
+      "-v apt-get") return 1 ;;
+      "-v yum") return 1 ;;
+      "-v pacman") return 1 ;;
+      *) builtin command "$@" ;;
+    esac
+  }
+  export -f command
+  CAPTURED_URL=""
+  curl() {
+    for arg in "$@"; do
+      case "$arg" in
+        https://github.com/charmbracelet/gum*) CAPTURED_URL="$arg" ;;
+        https://api.github.com*) echo '{"tag_name": "v0.17.0"}' ; return 0 ;;
+      esac
+    done
+    return 0
+  }
+  export -f curl
+  tar() { return 0; }
+  export -f tar
+  mkdir() { builtin mkdir -p "$@" 2>/dev/null || true; }
+  export -f mkdir
+  mv() { return 0; }
+  export -f mv
+  source "$BOOTSTRAP" 2>/dev/null || true
+  install_gum 2>/dev/null || true
+  if printf '%s' "$CAPTURED_URL" | grep -q "Darwin_x86_64"; then
+    printf 'ok   - install_gum: Darwin x86_64 URL contains Darwin_x86_64\n'
+  else
+    printf 'FAIL - install_gum: Darwin x86_64 URL should contain Darwin_x86_64 (got: %s)\n' "$CAPTURED_URL"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U3.3: install_gum URL contains Linux_x86_64 on Linux x86_64 (brew absent) — regression
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Linux";; -m) echo "x86_64";; esac }
+  export -f uname
+  command() {
+    case "$*" in
+      "-v gum")  return 1 ;;
+      "-v brew") return 1 ;;
+      "-v curl") return 0 ;;
+      "-v apt-get") return 1 ;;
+      "-v yum") return 1 ;;
+      "-v pacman") return 1 ;;
+      *) builtin command "$@" ;;
+    esac
+  }
+  export -f command
+  CAPTURED_URL=""
+  curl() {
+    for arg in "$@"; do
+      case "$arg" in
+        https://github.com/charmbracelet/gum*) CAPTURED_URL="$arg" ;;
+        https://api.github.com*) echo '{"tag_name": "v0.17.0"}' ; return 0 ;;
+      esac
+    done
+    return 0
+  }
+  export -f curl
+  tar() { return 0; }
+  export -f tar
+  mkdir() { builtin mkdir -p "$@" 2>/dev/null || true; }
+  export -f mkdir
+  mv() { return 0; }
+  export -f mv
+  source "$BOOTSTRAP" 2>/dev/null || true
+  install_gum 2>/dev/null || true
+  if printf '%s' "$CAPTURED_URL" | grep -q "Linux_x86_64"; then
+    printf 'ok   - install_gum: Linux x86_64 URL contains Linux_x86_64 (regression)\n'
+  else
+    printf 'FAIL - install_gum: Linux x86_64 URL should contain Linux_x86_64 (got: %s)\n' "$CAPTURED_URL"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
+# ---------------------------------------------------------------------------
+# U4.1: print_auth_steps stdout contains export PATH and .local/bin
+# ---------------------------------------------------------------------------
+(
+  uname() { case "$1" in -s) echo "Linux";; -m) echo "x86_64";; esac }
+  export -f uname
+  source "$BOOTSTRAP" 2>/dev/null || true
+  OUT=$(print_auth_steps 2>&1)
+  if printf '%s' "$OUT" | grep -q 'export PATH' && printf '%s' "$OUT" | grep -q '\.local/bin'; then
+    printf 'ok   - print_auth_steps: output contains export PATH and .local/bin\n'
+  else
+    printf 'FAIL - print_auth_steps: output should contain export PATH and .local/bin (got: %s)\n' "$OUT"
+    exit 1
+  fi
+) || fails=$((fails + 1))
+
 # ---------------------------------------------------------------------------
 # T3.2: --dry-run: output has [dry-run] lines, exit 0, no mutations in HOME
 # ---------------------------------------------------------------------------
