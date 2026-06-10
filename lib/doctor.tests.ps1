@@ -92,6 +92,27 @@ Describe 'phase_doctor - aggregated health check' -Skip:(-not $script:IsWindowsH
 }
 
 # ---------------------------------------------------------------------------
+# Test-IntentOverlay (PATH-only, graceful skip when absent)
+# ---------------------------------------------------------------------------
+Describe 'Test-IntentOverlay - intent-overlay health check' -Skip:(-not $script:IsWindowsHost) {
+
+    It 'Test-IntentOverlay is available after dot-sourcing' {
+        Get-Command Test-IntentOverlay -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+    }
+
+    It 'prints [skip] and never fails when intent-overlay is not on PATH' {
+        if (Get-Command intent-overlay -ErrorAction SilentlyContinue) {
+            Set-ItResult -Skipped -Because 'intent-overlay is installed; cannot test absent path'
+        } else {
+            $script:_DoctorFails = 0
+            $output = Test-IntentOverlay 6>&1 | Out-String
+            $output | Should -Match '\[skip\]'
+            $script:_DoctorFails | Should -Be 0
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Test-DuplicateBinaries (warn-only, never auto-fix)
 # ---------------------------------------------------------------------------
 Describe 'Test-DuplicateBinaries - duplicate binary detection' -Skip:(-not $script:IsWindowsHost) {

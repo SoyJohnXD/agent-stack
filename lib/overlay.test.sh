@@ -41,6 +41,25 @@ EOF
   printf '%s' "$manifest"
 }
 
+# new_stub_bin_git_only — stubs ONLY git (no intent-overlay on PATH), so
+# phase_overlay must fall back to the repo-local script.
+new_stub_bin_git_only() {
+  local record_file="$1"
+  local dir; dir=$(mktemp -d)
+
+  cat > "$dir/git" <<EOF
+#!/usr/bin/env bash
+echo "git \$*" >> "$record_file"
+# simulate clone: create the target dir when clone is called
+if [ "\${1:-}" = "clone" ]; then
+  mkdir -p "\${!#}"
+fi
+exit 0
+EOF
+  chmod +x "$dir/git"
+  printf '%s' "$dir"
+}
+
 # ---------------------------------------------------------------------------
 # T14a: phase_overlay pulls clean-code-lab then runs intent-overlay install (not dry-run)
 # ---------------------------------------------------------------------------
@@ -138,6 +157,51 @@ RECORD3_MUTATIONS=$(grep -v "rev-parse" "$RECORD3" 2>/dev/null || echo "")
 
 rm -rf "$STUB3" "$TEST_HOME3"
 rm -f "$RECORD3" "$MANIFEST3"
+
+# ---------------------------------------------------------------------------
+# T14d: intent-overlay NOT on PATH — phase_overlay symlinks the repo script
+# into ~/.local/bin and runs install via the repo-path fallback.
+# ---------------------------------------------------------------------------
+TEST_HOME4=$(new_home)
+RECORD4=$(mktemp)
+STUB4=$(new_stub_bin_git_only "$RECORD4")
+MANIFEST4=$(make_manifest "$TEST_HOME4")
+
+OVERLAY_LOCAL4="$TEST_HOME4/Documents/personal/clean-code-lab"
+mkdir -p "$OVERLAY_LOCAL4/.git" "$OVERLAY_LOCAL4/overlay"
+cat > "$OVERLAY_LOCAL4/overlay/intent-overlay" <<EOF
+#!/usr/bin/env bash
+echo "repo-script install \$*" >> "$RECORD4"
+exit 0
+EOF
+chmod +x "$OVERLAY_LOCAL4/overlay/intent-overlay"
+
+(
+  # Fully controlled PATH: no real ~/.local/bin, so a pre-existing
+  # intent-overlay on the host machine cannot mask the fallback branch.
+  export PATH="$STUB4:/usr/bin:/bin"
+  export HOME="$TEST_HOME4"
+  export DRY_RUN=0
+  export MANIFEST_FILE="$MANIFEST4"
+  source "$HERE/common.sh"
+  source "$HERE/overlay.sh"
+  phase_overlay
+) >/dev/null 2>&1
+
+LINK4="$TEST_HOME4/.local/bin/intent-overlay"
+if [ -L "$LINK4" ] && [ "$(readlink "$LINK4")" = "$OVERLAY_LOCAL4/overlay/intent-overlay" ]; then
+  pass "phase_overlay creates ~/.local/bin/intent-overlay symlink to the repo script"
+else
+  fail "phase_overlay should symlink ~/.local/bin/intent-overlay to $OVERLAY_LOCAL4/overlay/intent-overlay (got: $([ -L "$LINK4" ] && readlink "$LINK4" || echo "not a symlink"))"
+fi
+
+# Pin that the REPO-PATH script ran (not a PATH binary): the repo script
+# records a distinct "repo-script install" marker.
+INSTALL_CALL4=$(grep "repo-script install" "$RECORD4" | head -1)
+[ -n "$INSTALL_CALL4" ] && pass "phase_overlay runs intent-overlay install via repo-path fallback" || fail "phase_overlay should run intent-overlay install via repo-path fallback (record: $(cat "$RECORD4"))"
+
+rm -rf "$STUB4" "$TEST_HOME4"
+rm -f "$RECORD4" "$MANIFEST4"
 
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'

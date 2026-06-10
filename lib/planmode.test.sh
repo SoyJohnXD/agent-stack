@@ -229,6 +229,17 @@ fi
 rm -rf "$T5_HOME"; rm -f "$PLANMODE_SRC" "$SERIALIZATION_SRC" "$GATE_WIRING_SRC"
 
 # ---------------------------------------------------------------------------
+# T6 — persona/gate-wiring.md (real source, not a fixture) documents the
+# System Gate. Guards against accidental deletion of that content.
+# ---------------------------------------------------------------------------
+REAL_GATE_WIRING="$HERE/../persona/gate-wiring.md"
+if grep -q 'System Gate' "$REAL_GATE_WIRING" 2>/dev/null; then
+  pass "T6: persona/gate-wiring.md documents the System Gate"
+else
+  fail "T6: persona/gate-wiring.md should document the System Gate"
+fi
+
+# ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
 if [ "$fails" -eq 0 ]; then

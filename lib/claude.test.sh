@@ -243,6 +243,71 @@ LEFTOVER_TMP=$(find "$T6_HOME/.claude" -name '.agent-stack-upsert.*' 2>/dev/null
 
 rm -rf "$T6_HOME" "$T6_SRC"
 
+# ---------------------------------------------------------------------------
+# T7 — UserPromptSubmit duplicates collapse to one skill-registry-refresh.sh
+# entry, an unrelated raw gentle-ai entry is converted+collapsed too, and
+# unrelated UserPromptSubmit entries are preserved
+# ---------------------------------------------------------------------------
+T7_HOME=$(new_home)
+T7_SRC=$(new_hooks_src)
+T7_SETTINGS="$T7_HOME/.claude/settings.json"
+mkdir -p "$(dirname "$T7_SETTINGS")"
+cat > "$T7_SETTINGS" <<'EOF'
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "/home/user/.claude/hooks/skill-registry-refresh.sh"}]},
+      {"matcher": "", "hooks": [{"type": "command", "command": "/home/user/.claude/hooks/skill-registry-refresh.sh"}]},
+      {"matcher": "", "hooks": [{"type": "command", "command": "/home/user/.claude/hooks/skill-registry-refresh.sh"}]},
+      {"matcher": "", "hooks": [{"type": "command", "command": "gentle-ai skill-registry refresh --quiet --no-gitignore --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" || true"}]},
+      {"matcher": "", "hooks": [{"type": "command", "command": "/home/user/.claude/hooks/my-custom-hook.sh"}]},
+      {"matcher": "", "hooks": [{"type": "command", "command": "echo skill-registry-refresh.sh deprecated && /opt/custom.sh"}]}
+    ]
+  }
+}
+EOF
+
+(
+  export HOME="$T7_HOME" DRY_RUN=0 CLAUDE_HOOKS_SRC_DIR="$T7_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/claude.sh"
+  write_claude_settings_hooks
+) >/dev/null 2>&1
+
+T7_REFRESH_COUNT=$(jq '[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("/skill-registry-refresh\\.sh"))] | length' "$T7_SETTINGS")
+[ "$T7_REFRESH_COUNT" = "1" ] && pass "T7: exactly one skill-registry-refresh.sh entry after merge" || fail "T7: expected 1 skill-registry-refresh.sh entry, got $T7_REFRESH_COUNT"
+
+T7_CUSTOM_COUNT=$(jq '[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("my-custom-hook\\.sh"))] | length' "$T7_SETTINGS")
+[ "$T7_CUSTOM_COUNT" = "1" ] && pass "T7: unrelated UserPromptSubmit entry preserved" || fail "T7: unrelated UserPromptSubmit entry lost (count: $T7_CUSTOM_COUNT)"
+
+# An entry that merely CONTAINS "skill-registry-refresh.sh" mid-string (not as
+# a path it invokes) must be preserved untouched, not converted/deduped away.
+T7_MIDSTRING_CMD=$(jq -r '[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("echo skill-registry-refresh\\.sh deprecated"))][0].command' "$T7_SETTINGS")
+[ "$T7_MIDSTRING_CMD" = "echo skill-registry-refresh.sh deprecated && /opt/custom.sh" ] && pass "T7: mid-string skill-registry-refresh.sh mention preserved untouched" || fail "T7: mid-string mention should be preserved untouched (got: $T7_MIDSTRING_CMD)"
+
+# ---------------------------------------------------------------------------
+# T8 — re-running on the T7 output is idempotent (still 1 entry, byte-identical)
+# ---------------------------------------------------------------------------
+cp "$T7_SETTINGS" "${T7_SETTINGS}.after_run1"
+
+(
+  export HOME="$T7_HOME" DRY_RUN=0 CLAUDE_HOOKS_SRC_DIR="$T7_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/claude.sh"
+  write_claude_settings_hooks
+) >/dev/null 2>&1
+
+if cmp -s "${T7_SETTINGS}.after_run1" "$T7_SETTINGS"; then
+  pass "T8: second run after dedup is byte-identical"
+else
+  fail "T8: settings.json changed between dedup run and re-run"
+fi
+
+T8_REFRESH_COUNT=$(jq '[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | test("/skill-registry-refresh\\.sh"))] | length' "$T7_SETTINGS")
+[ "$T8_REFRESH_COUNT" = "1" ] && pass "T8: still exactly one skill-registry-refresh.sh entry after re-run" || fail "T8: expected 1 skill-registry-refresh.sh entry after re-run, got $T8_REFRESH_COUNT"
+
+rm -rf "$T7_HOME" "$T7_SRC"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else

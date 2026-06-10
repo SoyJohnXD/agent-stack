@@ -19,6 +19,17 @@ phase_overlay() {
   done < <(parse_manifest "$MANIFEST_FILE")
 
   ensure_repo "$local_path" "$remote" "$branch"
-  run intent-overlay install
+
+  local overlay_script="$local_path/overlay/intent-overlay"
+  ensure_symlink "$overlay_script" "$HOME/.local/bin/intent-overlay"
+
+  if [ -f "$overlay_script" ]; then
+    run "$overlay_script" install
+  elif command -v intent-overlay >/dev/null 2>&1; then
+    run intent-overlay install
+  else
+    printf '[skip] intent-overlay not found\n'
+  fi
+
   log_finish "overlay"
 }

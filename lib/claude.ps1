@@ -104,6 +104,12 @@ function Set-ClaudeSettingsHooks {
     }
 
     # UserPromptSubmit -> swap skill-registry refresh command
+    #
+    # PARITY NOTE: lib/claude.sh dedupes the skill-registry-refresh.sh entries
+    # after conversion (gentle-ai re-appends its raw entry on every sync,
+    # otherwise causing unbounded duplicate hook entries). This PowerShell
+    # path does not yet implement that dedup — port the same fix here if this
+    # path is exercised on Windows.
     if ($hooks.PSObject.Properties['UserPromptSubmit']) {
         foreach ($entry in @($hooks.UserPromptSubmit)) {
             foreach ($hook in @($entry.hooks)) {

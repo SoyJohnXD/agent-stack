@@ -141,26 +141,6 @@ install_gum() {
 }
 
 # ---------------------------------------------------------------------------
-# ensure_symlink <target> <link>
-# Creates or updates a symlink. Idempotent.
-# ---------------------------------------------------------------------------
-ensure_symlink() {
-  local target="$1"
-  local link="$2"
-  local link_dir; link_dir="$(dirname "$link")"
-
-  run mkdir -p "$link_dir"
-
-  if [ -L "$link" ]; then
-    run ln -sf "$target" "$link"
-  elif [ -e "$link" ]; then
-    printf 'warning: %s exists and is not a symlink; skipping\n' "$link"
-  else
-    run ln -s "$target" "$link"
-  fi
-}
-
-# ---------------------------------------------------------------------------
 # print_auth_steps — what to do after bootstrap completes
 # ---------------------------------------------------------------------------
 print_auth_steps() {

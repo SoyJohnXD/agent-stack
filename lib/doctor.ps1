@@ -78,6 +78,35 @@ function Test-AgentTool {
     }
 }
 
+function Test-IntentOverlay {
+    <#
+    .SYNOPSIS
+      Checks intent-overlay via PATH; skips gracefully when absent.
+    .DESCRIPTION
+      Decision Ledger: the bash doctor falls back to the repo-local
+      ~/.agent-stack/repos/clean-code-lab/overlay/intent-overlay script when
+      the binary isn't on PATH, because that's agent-stack's fixed install
+      layout on Linux/macOS. Windows has no equivalent symlinked binary yet
+      (lib/overlay.ps1 invokes the repo-local intent-overlay.ps1 directly),
+      so there is nothing to "find" via PATH-or-repo-path here. This check
+      is PATH-only and never fails: absent -> [WARN]/skip, never increments
+      $script:_DoctorFails.
+    #>
+    [CmdletBinding()]
+    param()
+
+    if (Get-Command intent-overlay -ErrorAction SilentlyContinue) {
+        try {
+            & intent-overlay doctor 2>&1 | Out-Null
+            Write-Host '[PASS] intent-overlay doctor'
+        } catch {
+            Write-Host '[WARN] intent-overlay doctor errored (optional)'
+        }
+    } else {
+        Write-Host '[skip] intent-overlay not found on PATH'
+    }
+}
+
 function Test-DuplicateBinaries {
     <#
     .SYNOPSIS
@@ -177,6 +206,7 @@ function phase_doctor {
     Test-AgentTool -Cmd @('git',       '--version') -Label 'git'
     Test-AgentTool -Cmd @('gum',       '--version') -Label 'gum' -Optional
 
+    Test-IntentOverlay
     Test-DuplicateBinaries
     Test-PathDuplicates
 

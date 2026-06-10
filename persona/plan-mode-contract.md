@@ -16,6 +16,8 @@ Before exiting plan mode, produce a hand-off brief covering:
 - Acceptance criteria
 - Size estimate + slice count (slices = sequential apply batches in ONE PR)
 - Pre-resolved architecture decisions, each with 2-3 options and tradeoffs
+- Shared primitives / foundation slices (helpers, error hierarchy, persistence
+  style) the change must reuse or establish first
 - Recommended SDD entry: `sdd-new` vs `sdd-ff` (state whether it is runnable in `auto`)
 
 End the brief with an explicit line: `Intent Gate: aligned | drift-detected`.

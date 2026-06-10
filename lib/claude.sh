@@ -73,13 +73,50 @@ claude_settings_merge_filter() {
   end
 ) |
 .hooks.UserPromptSubmit |= (
-  (. // []) | map(
+  (. // [])
+  # Convert any raw gentle-ai skill-registry refresh command (or a previously
+  # converted one) to point at our skill-registry-refresh.sh.
+  #
+  # The skill-registry-refresh.sh check is anchored to a path component
+  # (preceded by "/") so it only matches commands that INVOKE the script
+  # (e.g. "/home/user/.claude/hooks/skill-registry-refresh.sh"), not
+  # arbitrary commands that merely mention the filename mid-string
+  # (e.g. "echo skill-registry-refresh.sh deprecated && /opt/custom.sh").
+  | map(
     .hooks |= map(
-      if (.command? // "" | test("skill-registry refresh|skill-registry-refresh\\.sh")) then
+      if (.command? // "" | test("skill-registry refresh|/skill-registry-refresh\\.sh")) then
         .command = ($hooksDir + "/skill-registry-refresh.sh")
       else . end
     )
   )
+  # Dedupe: gentle-ai re-appends its raw entry on every sync, and the
+  # conversion above turns each one into another skill-registry-refresh.sh
+  # hook. Keep only the FIRST such hook across the whole array (and drop
+  # entries that become empty), so the file stays bounded at one entry no
+  # matter how many times agent-stack and gentle-ai sync run.
+  | reduce .[] as $entry (
+      {seen: false, out: []};
+      ($entry.hooks // []) as $hooks
+      | reduce $hooks[] as $hook (
+          {seen: .seen, kept: []};
+          if (.seen | not) and ($hook.command? // "" | test("/skill-registry-refresh\\.sh")) then
+            {seen: true, kept: (.kept + [$hook])}
+          elif ($hook.command? // "" | test("/skill-registry-refresh\\.sh")) then
+            .
+          else
+            {seen: .seen, kept: (.kept + [$hook])}
+          end
+        ) as $reduced
+      | {
+          seen: $reduced.seen,
+          out: (
+            if ($reduced.kept | length) > 0 then
+              .out + [($entry | .hooks = $reduced.kept)]
+            else .out end
+          )
+        }
+    )
+  | .out
 )
 JQ
 }

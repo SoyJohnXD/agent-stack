@@ -28,6 +28,23 @@ EOF
   printf '%s' "$dir"
 }
 
+# new_stub_bin_no_intent_overlay — same as new_stub_bin_all_pass but WITHOUT
+# intent-overlay on PATH, so phase_doctor must fall back to the repo path.
+new_stub_bin_no_intent_overlay() {
+  local record_file="$1"
+  local dir; dir=$(mktemp -d)
+
+  for cmd in codex-sdd-sync claude codex opencode gentle-ai gum git; do
+    cat > "$dir/$cmd" <<EOF
+#!/usr/bin/env bash
+echo "$cmd \$*" >> "$record_file"
+exit 0
+EOF
+    chmod +x "$dir/$cmd"
+  done
+  printf '%s' "$dir"
+}
+
 new_stub_bin_required_fail() {
   local record_file="$1"
   local failing_cmd="$2"
@@ -181,6 +198,54 @@ GUM_FAIL_EXIT=$?
 
 rm -rf "$STUB4" "$TEST_HOME4"
 rm -f "$RECORD4"
+
+# ---------------------------------------------------------------------------
+# T23f: intent-overlay NOT on PATH, repo present -> doctor falls back to the
+# repo-local intent-overlay script and the check still passes.
+# ---------------------------------------------------------------------------
+TEST_HOME5=$(new_home)
+RECORD5=$(mktemp)
+STUB5=$(new_stub_bin_no_intent_overlay "$RECORD5")
+
+OVERLAY_LOCAL5="$TEST_HOME5/Documents/personal/clean-code-lab"
+mkdir -p "$OVERLAY_LOCAL5/.git" "$OVERLAY_LOCAL5/overlay"
+cat > "$OVERLAY_LOCAL5/overlay/intent-overlay" <<EOF
+#!/usr/bin/env bash
+echo "intent-overlay \$*" >> "$RECORD5"
+exit 0
+EOF
+chmod +x "$OVERLAY_LOCAL5/overlay/intent-overlay"
+
+MANIFEST5=$(mktemp)
+cat > "$MANIFEST5" <<EOF
+overlay | $OVERLAY_LOCAL5 | https://github.com/SoyJohnXD/clean-code-lab.git | main
+EOF
+
+T23F_OUT=$(
+  # Fully controlled PATH: no real ~/.local/bin, so a pre-existing
+  # intent-overlay on the host machine cannot mask the fallback branch.
+  export PATH="$STUB5:/usr/bin:/bin"
+  export HOME="$TEST_HOME5"
+  export DRY_RUN=0
+  export MANIFEST_FILE="$MANIFEST5"
+  source "$HERE/common.sh"
+  source "$HERE/doctor.sh"
+  phase_doctor
+)
+T23F_EXIT=$?
+
+case "$T23F_OUT" in
+  *"[PASS]"*"intent-overlay"*) pass "T23f: doctor falls back to repo-local intent-overlay and reports PASS" ;;
+  *) fail "T23f: doctor should PASS via repo-local intent-overlay fallback (got: $T23F_OUT)" ;;
+esac
+
+INTENT_OVERLAY_CALL5=$(grep "intent-overlay doctor" "$RECORD5" | head -1)
+[ -n "$INTENT_OVERLAY_CALL5" ] && pass "T23f: doctor invokes the repo-local intent-overlay script" || fail "T23f: doctor should invoke the repo-local intent-overlay script (record: $(cat "$RECORD5"))"
+
+[ "$T23F_EXIT" = "0" ] && pass "T23f: doctor exits 0 when repo-local fallback passes" || fail "T23f: doctor should exit 0 (got: $T23F_EXIT)"
+
+rm -rf "$STUB5" "$TEST_HOME5"
+rm -f "$RECORD5" "$MANIFEST5"
 
 # ---------------------------------------------------------------------------
 # T24 — duplicate binaries check (warn-only, never auto-fix)

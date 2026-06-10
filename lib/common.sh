@@ -193,6 +193,27 @@ upsert_block_by_markers() {
 }
 
 # ---------------------------------------------------------------------------
+# ensure_symlink <target> <link>
+# Creates or updates a symlink. Idempotent. Warns and skips when <link>
+# exists and is not a symlink (never overwrites a real file/dir).
+# ---------------------------------------------------------------------------
+ensure_symlink() {
+  local target="$1"
+  local link="$2"
+  local link_dir; link_dir="$(dirname "$link")"
+
+  run mkdir -p "$link_dir"
+
+  if [ -L "$link" ]; then
+    run ln -sf "$target" "$link"
+  elif [ -e "$link" ]; then
+    printf 'warning: %s exists and is not a symlink; skipping\n' "$link"
+  else
+    run ln -s "$target" "$link"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # write_managed_block <target_file> <start_marker> <end_marker> <src_file>
 #
 # DRY_RUN gate: log intended action and return without writing.

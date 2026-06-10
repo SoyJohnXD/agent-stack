@@ -3,6 +3,9 @@
 [ "${_DOCTOR_SH_LOADED:-}" = "1" ] && return 0
 _DOCTOR_SH_LOADED=1
 
+# MANIFEST_FILE must be set by the entrypoint before sourcing (mirrors overlay.sh/codex.sh)
+: "${MANIFEST_FILE:=$(dirname "$(dirname "${BASH_SOURCE[0]}")")/repos.manifest}"
+
 # check_tool <name> <command...> [optional]
 # Runs the command; records pass/fail. When optional=true, a failure is reported but does not set exit failure.
 _doctor_fails=0
@@ -101,6 +104,45 @@ _check_path_duplicates() {
   done < "$bashrc"
 }
 
+# _overlay_repo_script
+# Resolves the intent-overlay script inside the clean-code-lab repo via
+# repos.manifest (same "overlay" entry phase_overlay uses). Prints the path
+# and returns success only when the script exists.
+_overlay_repo_script() {
+  local local_path remote branch script
+
+  while IFS='|' read -r _name local_path remote branch; do
+    _name=$(printf '%s' "$_name" | tr -d ' ')
+    local_path=$(printf '%s' "$local_path" | tr -d ' ')
+    [ "$_name" = "overlay" ] || continue
+
+    script="$local_path/overlay/intent-overlay"
+    if [ -f "$script" ]; then
+      printf '%s' "$script"
+      return 0
+    fi
+  done < <(parse_manifest "$MANIFEST_FILE")
+
+  return 1
+}
+
+# _check_intent_overlay
+# Prefers the intent-overlay binary on PATH (post-symlink machines).
+# Falls back to the repo-local script (pre-symlink machines) so doctor
+# diagnoses correctly before phase_overlay has run.
+_check_intent_overlay() {
+  local overlay_script
+
+  if command -v intent-overlay >/dev/null 2>&1; then
+    _check "intent-overlay doctor" "false" intent-overlay doctor
+  elif overlay_script=$(_overlay_repo_script); then
+    _check "intent-overlay doctor" "false" "$overlay_script" doctor
+  else
+    printf '  [FAIL] %s\n' "intent-overlay doctor"
+    _doctor_fails=$((_doctor_fails + 1))
+  fi
+}
+
 phase_doctor() {
   log_start "doctor"
   _doctor_fails=0
@@ -108,7 +150,7 @@ phase_doctor() {
   printf '\n=== Agent Stack Health Report ===\n\n'
 
   printf '%s\n' "-- Overlay --"
-  _check "intent-overlay doctor"  "false" intent-overlay doctor
+  _check_intent_overlay
 
   printf '\n%s\n' "-- Codex MCP --"
   _check "codex-sdd-sync --mcp-audit" "false" codex-sdd-sync --mcp-audit

@@ -11,6 +11,14 @@ function phase_overlay {
     if (-not $entry) { Write-Warning 'phase_overlay: overlay entry not found in repos.manifest'; return }
 
     Invoke-EnsureRepo -LocalPath $entry.LocalPath -Remote $entry.Remote -Branch $entry.Branch
+
     $intentOverlay = Join-Path $entry.LocalPath 'overlay\intent-overlay.ps1'
-    Invoke-AgentRun powershell -NonInteractive -File $intentOverlay install
+
+    if (Test-Path -LiteralPath $intentOverlay -PathType Leaf) {
+        Invoke-AgentRun powershell -NonInteractive -File $intentOverlay install
+    } elseif (Get-Command intent-overlay -ErrorAction SilentlyContinue) {
+        Invoke-AgentRun intent-overlay install
+    } else {
+        Write-Host '[skip] intent-overlay not found'
+    }
 }

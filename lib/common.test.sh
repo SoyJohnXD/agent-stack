@@ -478,6 +478,83 @@ fi
 
 rm -rf "$TB6_HOME"; rm -f "$TB6_SRC"
 
+# ---------------------------------------------------------------------------
+# ensure_symlink() — create, idempotent re-link, warn-and-skip on non-symlink
+# Moved from bootstrap.sh into common.sh (canonical shared seam).
+# ---------------------------------------------------------------------------
+
+# T-ES1: creates the symlink when the link path is absent
+TES1_HOME=$(new_home)
+TES1_TARGET="$TES1_HOME/target-file"
+TES1_LINK="$TES1_HOME/.local/bin/agent-stack"
+printf 'target content\n' > "$TES1_TARGET"
+
+(
+  export HOME="$TES1_HOME" DRY_RUN=0
+  source "$COMMON"
+  ensure_symlink "$TES1_TARGET" "$TES1_LINK"
+) >/dev/null 2>&1
+
+if [ -L "$TES1_LINK" ] && [ "$(readlink "$TES1_LINK")" = "$TES1_TARGET" ]; then
+  pass "ensure_symlink: creates a symlink pointing at target"
+else
+  fail "ensure_symlink: should create a symlink pointing at $TES1_TARGET"
+fi
+
+rm -rf "$TES1_HOME"
+
+# T-ES2: idempotent re-run — second call on an existing symlink stays a
+# symlink pointing at the (possibly updated) target, and does not error
+TES2_HOME=$(new_home)
+TES2_TARGET="$TES2_HOME/target-file"
+TES2_LINK="$TES2_HOME/.local/bin/agent-stack"
+printf 'target content\n' > "$TES2_TARGET"
+
+(
+  export HOME="$TES2_HOME" DRY_RUN=0
+  source "$COMMON"
+  ensure_symlink "$TES2_TARGET" "$TES2_LINK"
+  ensure_symlink "$TES2_TARGET" "$TES2_LINK"
+) >/dev/null 2>&1
+TES2_EXIT=$?
+
+[ "$TES2_EXIT" = "0" ] && pass "ensure_symlink: second run on existing symlink exits 0" || fail "ensure_symlink: second run should exit 0, got $TES2_EXIT"
+
+if [ -L "$TES2_LINK" ] && [ "$(readlink "$TES2_LINK")" = "$TES2_TARGET" ]; then
+  pass "ensure_symlink: idempotent re-run keeps symlink pointing at target"
+else
+  fail "ensure_symlink: idempotent re-run should keep symlink pointing at $TES2_TARGET"
+fi
+
+rm -rf "$TES2_HOME"
+
+# T-ES3: warns and skips when the link path exists as a non-symlink
+TES3_HOME=$(new_home)
+TES3_TARGET="$TES3_HOME/target-file"
+TES3_LINK="$TES3_HOME/.local/bin/agent-stack"
+printf 'target content\n' > "$TES3_TARGET"
+mkdir -p "$(dirname "$TES3_LINK")"
+printf 'pre-existing real file\n' > "$TES3_LINK"
+
+TES3_OUT=$(
+  export HOME="$TES3_HOME" DRY_RUN=0
+  source "$COMMON"
+  ensure_symlink "$TES3_TARGET" "$TES3_LINK"
+) 2>&1
+
+case "$TES3_OUT" in
+  *"warning"*"$TES3_LINK"*) pass "ensure_symlink: warns when link path exists as a non-symlink" ;;
+  *) fail "ensure_symlink: should warn when link path exists as a non-symlink (got: $TES3_OUT)" ;;
+esac
+
+if [ ! -L "$TES3_LINK" ] && grep -q 'pre-existing real file' "$TES3_LINK" 2>/dev/null; then
+  pass "ensure_symlink: leaves pre-existing non-symlink file untouched"
+else
+  fail "ensure_symlink: should leave the pre-existing non-symlink file untouched"
+fi
+
+rm -rf "$TES3_HOME"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else
