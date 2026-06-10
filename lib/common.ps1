@@ -13,6 +13,8 @@
     Expand-AgentPath       — ~ expansion to USERPROFILE
     Invoke-ParseManifest   — parse repos.manifest into pscustomobjects
     Invoke-EnsureRepo      — idempotent clone-or-pull via Invoke-AgentRun
+    Invoke-BlockUpsert     — replace/insert a marker-delimited block in a file
+    Set-ManagedBlock       — DRY_RUN-aware wrapper around Invoke-BlockUpsert
 
   PowerShell 5.1+ compatible. No PS7-only features.
 #>
@@ -190,4 +192,102 @@ function Invoke-EnsureRepo {
     } else {
         Invoke-AgentRun git clone --branch $Branch $Remote $LocalPath
     }
+}
+
+# ---------------------------------------------------------------------------
+# Invoke-BlockUpsert — replace/insert a marker-delimited block in a file
+# ---------------------------------------------------------------------------
+function Invoke-BlockUpsert {
+    <#
+    .SYNOPSIS
+      Replaces an existing Start..End marker span with Block, or appends Block
+      (with its own markers) at EOF when the markers are absent.
+    .DESCRIPTION
+      Mirrors the awk logic in upsert_block_by_markers (lib/common.sh). Content
+      outside the marker span — including foreign marker blocks such as
+      gentle-ai's — is preserved verbatim.
+    .PARAMETER FilePath
+      The file to update. Created (with parent dirs) if missing.
+    .PARAMETER StartMarker
+      The exact line that opens the managed block.
+    .PARAMETER EndMarker
+      The exact line that closes the managed block.
+    .PARAMETER Block
+      The full replacement block, markers included, one element per line.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]   $FilePath,
+        [Parameter(Mandatory)] [string]   $StartMarker,
+        [Parameter(Mandatory)] [string]   $EndMarker,
+        [Parameter(Mandatory)] [string[]] $Block
+    )
+
+    $parent = Split-Path -Parent $FilePath
+    if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+
+    $lines = if (Test-Path $FilePath) { @(Get-Content -LiteralPath $FilePath) } else { @() }
+    $n = $lines.Count; $s = -1; $e = -1
+    for ($i = 0; $i -lt $n; $i++) {
+        if ($lines[$i] -eq $StartMarker -and $s -lt 0) { $s = $i }
+        if ($lines[$i] -eq $EndMarker   -and $s -ge 0) { $e = $i; break }
+    }
+
+    # Refuse when the start marker has no matching end marker: replacing the
+    # span would be impossible and appending would duplicate the block.
+    if ($s -ge 0 -and $e -lt 0) {
+        throw "Invoke-BlockUpsert: $FilePath has unbalanced managed-block markers ($StartMarker / $EndMarker); fix the file manually"
+    }
+
+    $out = [System.Collections.Generic.List[string]]::new()
+    if ($s -ge 0 -and $e -ge 0) {
+        # Replace existing span
+        for ($i = 0; $i -lt $s; $i++)    { $out.Add($lines[$i]) }
+        foreach ($l in $Block)             { $out.Add($l) }
+        for ($i = $e + 1; $i -lt $n; $i++) { $out.Add($lines[$i]) }
+    } else {
+        # Append at EOF
+        foreach ($l in $lines) { $out.Add($l) }
+        $out.Add('')
+        foreach ($l in $Block) { $out.Add($l) }
+    }
+    Set-Content -LiteralPath $FilePath -Value $out.ToArray() -Encoding UTF8
+}
+
+# ---------------------------------------------------------------------------
+# Set-ManagedBlock — DRY_RUN-aware wrapper around Invoke-BlockUpsert
+# ---------------------------------------------------------------------------
+function Set-ManagedBlock {
+    <#
+    .SYNOPSIS
+      Upserts a marker-delimited block read from SourcePath into TargetPath,
+      honoring $env:DRY_RUN.
+    .DESCRIPTION
+      When $env:DRY_RUN equals '1', logs the intended action and returns without
+      writing. Otherwise reads SourcePath (the block, markers included) and
+      delegates to Invoke-BlockUpsert.
+    .PARAMETER TargetPath
+      The file to update.
+    .PARAMETER StartMarker
+      The exact line that opens the managed block.
+    .PARAMETER EndMarker
+      The exact line that closes the managed block.
+    .PARAMETER SourcePath
+      Path to the block source file (markers included).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $TargetPath,
+        [Parameter(Mandatory)] [string] $StartMarker,
+        [Parameter(Mandatory)] [string] $EndMarker,
+        [Parameter(Mandatory)] [string] $SourcePath
+    )
+
+    if ($env:DRY_RUN -eq '1') {
+        Write-Host "[dry-run] would upsert $StartMarker..$EndMarker block into $TargetPath"
+        return
+    }
+
+    $block = @(Get-Content -LiteralPath $SourcePath)
+    Invoke-BlockUpsert -FilePath $TargetPath -StartMarker $StartMarker -EndMarker $EndMarker -Block $block
 }

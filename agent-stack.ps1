@@ -14,12 +14,15 @@
 
   Subcommands:
     bootstrap     Windows install flow
-    sync          gentle -> persona -> codex -> overlay
+    sync          gentle -> persona -> planmode -> claude-hooks -> codex-hooks -> codex -> overlay
     gentle        gentle-ai upgrade + sync
     update-clis   Update claude, codex, opencode, gentle-ai
     all           update-clis -> sync
     doctor        Aggregated health report
     persona       Apply persona config to claude/codex/opencode config files
+    planmode      Upsert plan-mode/serialization/gate-wiring blocks into the 3 agent configs
+    claude-hooks  Install Claude Code hook scripts and wire them into settings.json
+    codex-hooks   Install Codex hook scripts and wire them into hooks.json
     codex         Clone/update codex repo, run install.ps1, run codex-sdd-sync
     overlay       Clone/update overlay repo, run intent-overlay.ps1 install
     exit|salir    Exit cleanly
@@ -41,6 +44,8 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\doctor.ps1"
 . "$PSScriptRoot\lib\bootstrap.ps1"
 . "$PSScriptRoot\lib\persona.ps1"
+. "$PSScriptRoot\lib\planmode.ps1"
+. "$PSScriptRoot\lib\claude.ps1"
 . "$PSScriptRoot\lib\codex.ps1"
 . "$PSScriptRoot\lib\overlay.ps1"
 
@@ -129,6 +134,9 @@ function Show-Menu {
 function Invoke-RunSync {
     phase_gentle
     phase_persona
+    phase_planmode
+    phase_claude_hooks
+    phase_codex_hooks
     if ($env:SKIP_CODEX -eq '1') {
         Write-Host '[skip] codex phase skipped (--skip-codex)'
     } else {
@@ -155,6 +163,9 @@ function Invoke-Dispatch {
     switch ($Subcommand) {
         'bootstrap'                         { phase_bootstrap }
         'persona'                           { phase_persona }
+        'planmode'                          { phase_planmode }
+        'claude-hooks'                      { phase_claude_hooks }
+        'codex-hooks'                       { phase_codex_hooks }
         'sync'                              { Invoke-RunSync }
         'overlay'                           { phase_overlay }
         'codex'                             { phase_codex }

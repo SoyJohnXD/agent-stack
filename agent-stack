@@ -24,6 +24,10 @@ source "$HERE/lib/doctor.sh"
 source "$HERE/lib/bootstrap.sh"
 # shellcheck source=lib/persona.sh
 source "$HERE/lib/persona.sh"
+# shellcheck source=lib/planmode.sh
+source "$HERE/lib/planmode.sh"
+# shellcheck source=lib/claude.sh
+source "$HERE/lib/claude.sh"
 
 # ---------------------------------------------------------------------------
 # Global flag parsing
@@ -104,6 +108,9 @@ label_to_subcommand() {
 run_sync() {
   phase_gentle
   phase_persona
+  phase_planmode
+  phase_claude_hooks
+  phase_codex_hooks
   if [ "${SKIP_CODEX:-0}" = "1" ]; then
     printf '[skip] codex phase skipped (--skip-codex)\n'
   else
@@ -125,6 +132,9 @@ print_usage() {
   printf '\nValid subcommands:\n'
   printf '  bootstrap     Install and configure all agents from scratch\n'
   printf '  persona       Upsert Gentleman-CO override into the 3 agent configs\n'
+  printf '  planmode      Upsert plan-mode/serialization/gate-wiring blocks into the 3 agent configs\n'
+  printf '  claude-hooks  Install Claude Code hook scripts and wire them into settings.json\n'
+  printf '  codex-hooks   Install Codex hook scripts and wire them into hooks.json\n'
   printf '  sync          Run gentle -> codex -> overlay\n'
   printf '  overlay       Pull clean-code-lab + intent-overlay install\n'
   printf '  codex         Pull codex repo + install.sh\n'
@@ -141,15 +151,18 @@ print_usage() {
 dispatch() {
   local subcommand="$1"
   case "$subcommand" in
-    bootstrap)   phase_bootstrap ;;
-    persona)     phase_persona ;;
-    sync)        run_sync ;;
-    overlay)     phase_overlay ;;
-    codex)       phase_codex ;;
-    gentle)      phase_gentle ;;
-    update-clis) phase_update_clis ;;
-    all)         run_all ;;
-    doctor)      phase_doctor ;;
+    bootstrap)    phase_bootstrap ;;
+    persona)      phase_persona ;;
+    planmode)     phase_planmode ;;
+    claude-hooks) phase_claude_hooks ;;
+    codex-hooks)  phase_codex_hooks ;;
+    sync)         run_sync ;;
+    overlay)      phase_overlay ;;
+    codex)        phase_codex ;;
+    gentle)       phase_gentle ;;
+    update-clis)  phase_update_clis ;;
+    all)          run_all ;;
+    doctor)       phase_doctor ;;
     salir|exit|"Salir") exit 0 ;;
     *)
       printf 'Unknown subcommand: %s\n\n' "$subcommand" >&2

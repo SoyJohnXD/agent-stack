@@ -90,3 +90,98 @@ Describe 'phase_doctor - aggregated health check' -Skip:(-not $script:IsWindowsH
         $script:_DoctorFails | Should -Be $firstCount
     }
 }
+
+# ---------------------------------------------------------------------------
+# Test-DuplicateBinaries (warn-only, never auto-fix)
+# ---------------------------------------------------------------------------
+Describe 'Test-DuplicateBinaries - duplicate binary detection' -Skip:(-not $script:IsWindowsHost) {
+
+    It 'Test-DuplicateBinaries is available after dot-sourcing' {
+        Get-Command Test-DuplicateBinaries -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+    }
+
+    It 'warns when a binary resolves to more than one location on PATH' {
+        $tempDirA = Join-Path $TestDrive 'bin-a'
+        $tempDirB = Join-Path $TestDrive 'bin-b'
+        New-Item -ItemType Directory -Path $tempDirA, $tempDirB -Force | Out-Null
+
+        $script:_DoctorFails = 0
+
+        foreach ($dir in @($tempDirA, $tempDirB)) {
+            $exe = Join-Path $dir 'gentle-ai.cmd'
+            Set-Content -Path $exe -Value '@echo gentle-ai version 1.0.0'
+        }
+
+        $oldPath = $env:PATH
+        try {
+            $env:PATH = "$tempDirA;$tempDirB;$oldPath"
+            $output = Test-DuplicateBinaries 6>&1 | Out-String
+            $output | Should -Match '\[WARN\]'
+            $output | Should -Match 'gentle-ai'
+        } finally {
+            $env:PATH = $oldPath
+        }
+
+        $script:_DoctorFails | Should -Be 0
+    }
+
+    It 'does not warn when a binary resolves to a single location' {
+        $tempDirA = Join-Path $TestDrive 'bin-single'
+        New-Item -ItemType Directory -Path $tempDirA -Force | Out-Null
+
+        $exe = Join-Path $tempDirA 'gentle-ai.cmd'
+        Set-Content -Path $exe -Value '@echo gentle-ai version 1.0.0'
+
+        $oldPath = $env:PATH
+        try {
+            $env:PATH = "$tempDirA;$oldPath"
+            $output = Test-DuplicateBinaries 6>&1 | Out-String
+            $output | Should -Not -Match '\[WARN\] duplicate binary: gentle-ai'
+        } finally {
+            $env:PATH = $oldPath
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Test-PathDuplicates (warn-only, never auto-fix)
+# ---------------------------------------------------------------------------
+Describe 'Test-PathDuplicates - duplicate PATH entry detection' -Skip:(-not $script:IsWindowsHost) {
+
+    It 'Test-PathDuplicates is available after dot-sourcing' {
+        Get-Command Test-PathDuplicates -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+    }
+
+    It 'warns when PATH contains the same directory more than once' {
+        $tempDir = Join-Path $TestDrive 'dup-path-dir'
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+
+        $script:_DoctorFails = 0
+        $oldPath = $env:PATH
+        try {
+            $env:PATH = "$tempDir;$tempDir;$oldPath"
+            $output = Test-PathDuplicates 6>&1 | Out-String
+            $output | Should -Match '\[WARN\]'
+            $output | Should -Match ([regex]::Escape($tempDir))
+        } finally {
+            $env:PATH = $oldPath
+        }
+
+        $script:_DoctorFails | Should -Be 0
+    }
+
+    It 'does not warn when PATH entries are unique' {
+        $tempDirA = Join-Path $TestDrive 'unique-a'
+        $tempDirB = Join-Path $TestDrive 'unique-b'
+        New-Item -ItemType Directory -Path $tempDirA, $tempDirB -Force | Out-Null
+
+        $oldPath = $env:PATH
+        try {
+            $env:PATH = "$tempDirA;$tempDirB;$oldPath"
+            $output = Test-PathDuplicates 6>&1 | Out-String
+            $output | Should -Not -Match '\[WARN\]'
+        } finally {
+            $env:PATH = $oldPath
+        }
+    }
+}

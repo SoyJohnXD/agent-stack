@@ -180,3 +180,128 @@ Describe 'Invoke-EnsureRepo - clone vs pull' -Skip:(-not $script:IsWindowsHost) 
         Remove-Item $tmpDir -Recurse -Force
     }
 }
+
+# ---------------------------------------------------------------------------
+# Invoke-BlockUpsert / Set-ManagedBlock — marker-delimited block upsert
+# Mirrors lib/common.test.sh "upsert_block_by_markers / write_managed_block".
+# ---------------------------------------------------------------------------
+Describe 'Invoke-BlockUpsert / Set-ManagedBlock - marker block upsert' -Skip:(-not $script:IsWindowsHost) {
+
+    BeforeAll {
+        $script:ubStart = '<!-- upsert-test:start -->'
+        $script:ubEnd   = '<!-- upsert-test:end -->'
+    }
+
+    BeforeEach {
+        $script:savedDryRun = $env:DRY_RUN
+        $env:DRY_RUN = '0'
+        $script:tmpDir = Join-Path $env:TEMP ("block-upsert-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:tmpDir -Force | Out-Null
+    }
+    AfterEach {
+        $env:DRY_RUN = $script:savedDryRun
+        Remove-Item $script:tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    function New-BlockSource([string] $Content) {
+        $src = Join-Path $script:tmpDir ("block-src-" + [guid]::NewGuid().ToString('N') + ".md")
+        @($script:ubStart, $Content, $script:ubEnd) | Set-Content -LiteralPath $src -Encoding UTF8
+        return $src
+    }
+
+    It 'inserts the block when markers are absent and preserves existing content' {
+        $dest = Join-Path $script:tmpDir 'CLAUDE.md'
+        'existing prose' | Set-Content -LiteralPath $dest -Encoding UTF8
+        $src = New-BlockSource 'CONTENT-B1'
+
+        Set-ManagedBlock -TargetPath $dest -StartMarker $script:ubStart -EndMarker $script:ubEnd -SourcePath $src
+
+        $content = Get-Content -LiteralPath $dest -Raw
+        $content | Should -Match 'existing prose'
+        ([regex]::Matches($content, [regex]::Escape($script:ubStart))).Count | Should -Be 1
+    }
+
+    It 'is idempotent on a second run (file byte-identical)' {
+        $dest = Join-Path $script:tmpDir 'CLAUDE.md'
+        'preamble' | Set-Content -LiteralPath $dest -Encoding UTF8
+        $src = New-BlockSource 'CONTENT-B2'
+
+        Set-ManagedBlock -TargetPath $dest -StartMarker $script:ubStart -EndMarker $script:ubEnd -SourcePath $src
+        $afterRun1 = Get-Content -LiteralPath $dest -Raw
+
+        Set-ManagedBlock -TargetPath $dest -StartMarker $script:ubStart -EndMarker $script:ubEnd -SourcePath $src
+        $afterRun2 = Get-Content -LiteralPath $dest -Raw
+
+        $afterRun2 | Should -Be $afterRun1
+    }
+
+    It 'replaces an existing span in place, preserving HEAD/TAIL content' {
+        $dest = Join-Path $script:tmpDir 'CLAUDE.md'
+        @('HEAD', $script:ubStart, 'OLD', $script:ubEnd, 'TAIL') | Set-Content -LiteralPath $dest -Encoding UTF8
+        $src = New-BlockSource 'NEW-CONTENT-B3'
+
+        Set-ManagedBlock -TargetPath $dest -StartMarker $script:ubStart -EndMarker $script:ubEnd -SourcePath $src
+
+        $lines = Get-Content -LiteralPath $dest
+        $lines | Should -Contain 'HEAD'
+        $lines | Should -Contain 'TAIL'
+        $lines | Should -Contain 'NEW-CONTENT-B3'
+        $lines | Should -Not -Contain 'OLD'
+        ($lines | Where-Object { $_ -eq $script:ubStart }).Count | Should -Be 1
+    }
+
+    It 'does not create or modify the destination file in dry-run mode' {
+        $dest = Join-Path $script:tmpDir 'CLAUDE.md'
+        $src = New-BlockSource 'CONTENT-B4'
+        $env:DRY_RUN = '1'
+
+        $output = Set-ManagedBlock -TargetPath $dest -StartMarker $script:ubStart -EndMarker $script:ubEnd -SourcePath $src 6>&1 | Out-String
+
+        Test-Path -LiteralPath $dest | Should -Be $false
+        $output | Should -Match '\[dry-run\]'
+    }
+
+    It 'leaves a foreign gentle-ai marker block untouched' {
+        $dest = Join-Path $script:tmpDir 'CLAUDE.md'
+        @(
+            'preamble line'
+            '<!-- gentle-ai:sdd-orchestrator -->'
+            'gentle-ai sdd-orchestrator content line 1'
+            'gentle-ai sdd-orchestrator content line 2'
+            '<!-- /gentle-ai:sdd-orchestrator -->'
+            'middle line'
+            $script:ubStart
+            'OLD-BLOCK-B5'
+            $script:ubEnd
+            'trailing line'
+        ) | Set-Content -LiteralPath $dest -Encoding UTF8
+        $src = New-BlockSource 'NEW-CONTENT-B5'
+
+        Set-ManagedBlock -TargetPath $dest -StartMarker $script:ubStart -EndMarker $script:ubEnd -SourcePath $src
+
+        $lines = Get-Content -LiteralPath $dest
+        $lines | Should -Contain '<!-- gentle-ai:sdd-orchestrator -->'
+        $lines | Should -Contain 'gentle-ai sdd-orchestrator content line 1'
+        $lines | Should -Contain 'gentle-ai sdd-orchestrator content line 2'
+        $lines | Should -Contain '<!-- /gentle-ai:sdd-orchestrator -->'
+        $lines | Should -Contain 'NEW-CONTENT-B5'
+    }
+
+    It 'throws and leaves the file unchanged when the start marker has no matching end marker' {
+        $dest = Join-Path $script:tmpDir 'CLAUDE.md'
+        @(
+            'preamble line'
+            $script:ubStart
+            'ORPHANED-CONTENT'
+            'trailing line'
+        ) | Set-Content -LiteralPath $dest -Encoding UTF8
+        $src = New-BlockSource 'NEW-CONTENT-B6'
+
+        $before = Get-Content -LiteralPath $dest -Raw
+
+        { Set-ManagedBlock -TargetPath $dest -StartMarker $script:ubStart -EndMarker $script:ubEnd -SourcePath $src } | Should -Throw '*unbalanced*'
+
+        $after = Get-Content -LiteralPath $dest -Raw
+        $after | Should -Be $before
+    }
+}

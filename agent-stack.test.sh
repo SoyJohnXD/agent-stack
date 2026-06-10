@@ -345,6 +345,70 @@ fi
 rm -rf "$STUB_ORD" "$TEST_HOME_ORD"
 rm -f "$RECORD_ORD"
 
+# ---------------------------------------------------------------------------
+# T8 — planmode / claude-hooks / codex-hooks subcommands dispatch correctly
+# ---------------------------------------------------------------------------
+for new_subcmd in planmode claude-hooks codex-hooks; do
+  TEST_HOME_NS=$(new_home)
+  RECORD_NS=$(mktemp)
+  STUB_NS=$(new_stub_bin "$RECORD_NS")
+
+  NS_OUT=$(
+    export PATH="$STUB_NS:$PATH"
+    export HOME="$TEST_HOME_NS"
+    bash "$ENTRYPOINT" "$new_subcmd" --dry-run 2>&1
+  )
+  NS_EXIT=$?
+
+  [ "$NS_EXIT" = "0" ] && pass "T8: '$new_subcmd' subcommand exits 0" || fail "T8: '$new_subcmd' subcommand should exit 0, got $NS_EXIT"
+
+  case "$NS_OUT" in
+    *"[dry-run]"*) pass "T8: '$new_subcmd' subcommand produces [dry-run] output" ;;
+    *) fail "T8: '$new_subcmd --dry-run' should produce [dry-run] lines (got: $NS_OUT)" ;;
+  esac
+
+  rm -rf "$STUB_NS" "$TEST_HOME_NS"
+  rm -f "$RECORD_NS"
+done
+
+# ---------------------------------------------------------------------------
+# T9 — sync order: persona starts before planmode, claude-hooks, codex-hooks
+# ---------------------------------------------------------------------------
+TEST_HOME_ORD2=$(new_home)
+RECORD_ORD2=$(mktemp)
+STUB_ORD2=$(new_stub_bin "$RECORD_ORD2")
+
+SYNC_OUT2=$(
+  export PATH="$STUB_ORD2:$PATH"
+  export HOME="$TEST_HOME_ORD2"
+  bash "$ENTRYPOINT" sync --dry-run 2>&1
+)
+
+PERSONA_LINE2=$(printf '%s\n' "$SYNC_OUT2" | grep -n '>>> START: persona' | head -1 | cut -d: -f1)
+
+for new_phase in planmode claude-hooks codex-hooks; do
+  PHASE_LINE=$(printf '%s\n' "$SYNC_OUT2" | grep -n ">>> START: $new_phase" | head -1 | cut -d: -f1)
+  if [ -n "$PERSONA_LINE2" ] && [ -n "$PHASE_LINE" ] && [ "$PERSONA_LINE2" -lt "$PHASE_LINE" ]; then
+    pass "T9: sync order — 'persona' starts before '$new_phase'"
+  else
+    fail "T9: sync order check failed for '$new_phase' (persona_line=$PERSONA_LINE2 phase_line=$PHASE_LINE in output: $(printf '%s\n' "$SYNC_OUT2" | grep 'START:' | head -8))"
+  fi
+done
+
+rm -rf "$STUB_ORD2" "$TEST_HOME_ORD2"
+rm -f "$RECORD_ORD2"
+
+# ---------------------------------------------------------------------------
+# T10 — print_usage documents the 3 new subcommands
+# ---------------------------------------------------------------------------
+USAGE_OUT2=$(bash "$ENTRYPOINT" bogus-command 2>&1 || true)
+for new_subcmd in planmode claude-hooks codex-hooks; do
+  case "$USAGE_OUT2" in
+    *"$new_subcmd"*) pass "T10: usage mentions '$new_subcmd'" ;;
+    *) fail "T10: usage should mention '$new_subcmd' (got: $USAGE_OUT2)" ;;
+  esac
+done
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else

@@ -182,6 +182,154 @@ GUM_FAIL_EXIT=$?
 rm -rf "$STUB4" "$TEST_HOME4"
 rm -f "$RECORD4"
 
+# ---------------------------------------------------------------------------
+# T24 — duplicate binaries check (warn-only, never auto-fix)
+# ---------------------------------------------------------------------------
+
+# T24a: duplicate gentle-ai in ~/.local/bin and ~/go/bin -> [WARN] with both
+# versions and a suggested removal command. Doesn't affect exit code.
+TEST_HOME_D1=$(new_home)
+RECORD_D1=$(mktemp)
+STUB_D1=$(new_stub_bin_all_pass "$RECORD_D1")
+
+mkdir -p "$TEST_HOME_D1/.local/bin" "$TEST_HOME_D1/go/bin"
+for dup_dir in "$TEST_HOME_D1/.local/bin" "$TEST_HOME_D1/go/bin"; do
+  cat > "$dup_dir/gentle-ai" <<EOF
+#!/usr/bin/env bash
+echo "gentle-ai version 1.0.0 ($dup_dir)"
+EOF
+  chmod +x "$dup_dir/gentle-ai"
+done
+
+D1_OUT=$(
+  export PATH="$STUB_D1:$PATH"
+  export HOME="$TEST_HOME_D1"
+  export DRY_RUN=0
+  source "$HERE/common.sh"
+  source "$HERE/doctor.sh"
+  phase_doctor
+)
+D1_EXIT=$?
+
+case "$D1_OUT" in
+  *"[WARN]"*"gentle-ai"*) pass "T24a: doctor warns about duplicate gentle-ai binary" ;;
+  *) fail "T24a: doctor should warn about duplicate gentle-ai binary (got: $D1_OUT)" ;;
+esac
+
+case "$D1_OUT" in
+  *".local/bin"*"go/bin"*|*"go/bin"*".local/bin"*) pass "T24a: warning mentions both ~/.local/bin and ~/go/bin paths" ;;
+  *) fail "T24a: warning should mention both duplicate paths (got: $D1_OUT)" ;;
+esac
+
+case "$D1_OUT" in
+  *"rm "*) pass "T24a: warning suggests a removal command" ;;
+  *) fail "T24a: warning should suggest a removal command (got: $D1_OUT)" ;;
+esac
+
+[ "$D1_EXIT" = "0" ] && pass "T24a: duplicate binary warning does not affect doctor exit code" || fail "T24a: doctor should still exit 0 (got: $D1_EXIT)"
+
+rm -rf "$STUB_D1" "$TEST_HOME_D1"
+rm -f "$RECORD_D1"
+
+# T24b: no duplicate -> no [WARN] about gentle-ai/engram duplicates
+TEST_HOME_D2=$(new_home)
+RECORD_D2=$(mktemp)
+STUB_D2=$(new_stub_bin_all_pass "$RECORD_D2")
+
+mkdir -p "$TEST_HOME_D2/.local/bin"
+cat > "$TEST_HOME_D2/.local/bin/gentle-ai" <<'EOF'
+#!/usr/bin/env bash
+echo "gentle-ai version 1.0.0"
+EOF
+chmod +x "$TEST_HOME_D2/.local/bin/gentle-ai"
+
+D2_OUT=$(
+  export PATH="$STUB_D2:$PATH"
+  export HOME="$TEST_HOME_D2"
+  export DRY_RUN=0
+  source "$HERE/common.sh"
+  source "$HERE/doctor.sh"
+  phase_doctor
+)
+
+case "$D2_OUT" in
+  *"[WARN]"*"duplicate"*"gentle-ai"*|*"[WARN]"*"gentle-ai"*"duplicate"*)
+    fail "T24b: doctor should NOT warn about gentle-ai when only one copy exists (got: $D2_OUT)" ;;
+  *) pass "T24b: no duplicate-binary warning when only one copy of gentle-ai exists" ;;
+esac
+
+rm -rf "$STUB_D2" "$TEST_HOME_D2"
+rm -f "$RECORD_D2"
+
+# ---------------------------------------------------------------------------
+# T25 — non-idempotent PATH prepend in ~/.bashrc (warn-only, suggest a guard)
+# ---------------------------------------------------------------------------
+
+# T25a: ~/.bashrc prepends the same directory to PATH twice -> [WARN] with a guard suggestion
+TEST_HOME_P1=$(new_home)
+RECORD_P1=$(mktemp)
+STUB_P1=$(new_stub_bin_all_pass "$RECORD_P1")
+
+mkdir -p "$TEST_HOME_P1"
+cat > "$TEST_HOME_P1/.bashrc" <<'EOF'
+export PATH="$HOME/.local/bin:$PATH"
+# ... later in the file, added again by another installer ...
+export PATH="$HOME/.local/bin:$PATH"
+EOF
+
+P1_OUT=$(
+  export PATH="$STUB_P1:$PATH"
+  export HOME="$TEST_HOME_P1"
+  export DRY_RUN=0
+  source "$HERE/common.sh"
+  source "$HERE/doctor.sh"
+  phase_doctor
+)
+P1_EXIT=$?
+
+case "$P1_OUT" in
+  *"[WARN]"*".bashrc"*) pass "T25a: doctor warns about repeated PATH prepend in ~/.bashrc" ;;
+  *) fail "T25a: doctor should warn about repeated PATH prepend (got: $P1_OUT)" ;;
+esac
+
+case "$P1_OUT" in
+  *"guard"*|*"idempot"*) pass "T25a: warning suggests an idempotency guard" ;;
+  *) fail "T25a: warning should suggest a guard (got: $P1_OUT)" ;;
+esac
+
+[ "$P1_EXIT" = "0" ] && pass "T25a: PATH duplication warning does not affect doctor exit code" || fail "T25a: doctor should still exit 0 (got: $P1_EXIT)"
+
+rm -rf "$STUB_P1" "$TEST_HOME_P1"
+rm -f "$RECORD_P1"
+
+# T25b: ~/.bashrc prepends each directory only once -> no PATH warning
+TEST_HOME_P2=$(new_home)
+RECORD_P2=$(mktemp)
+STUB_P2=$(new_stub_bin_all_pass "$RECORD_P2")
+
+mkdir -p "$TEST_HOME_P2"
+cat > "$TEST_HOME_P2/.bashrc" <<'EOF'
+export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/go/bin:$PATH"
+EOF
+
+P2_OUT=$(
+  export PATH="$STUB_P2:$PATH"
+  export HOME="$TEST_HOME_P2"
+  export DRY_RUN=0
+  source "$HERE/common.sh"
+  source "$HERE/doctor.sh"
+  phase_doctor
+)
+
+case "$P2_OUT" in
+  *"[WARN]"*".bashrc"*) fail "T25b: doctor should NOT warn when each PATH dir is prepended once (got: $P2_OUT)" ;;
+  *) pass "T25b: no PATH warning when each directory is prepended only once" ;;
+esac
+
+rm -rf "$STUB_P2" "$TEST_HOME_P2"
+rm -f "$RECORD_P2"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else

@@ -99,3 +99,118 @@ ensure_repo() {
     run git clone --branch "$branch" "$remote" "$local_path"
   fi
 }
+
+# ---------------------------------------------------------------------------
+# markers_balanced <target_file> <start_marker> <end_marker>
+#
+# Returns success when the target has zero start markers, or exactly one
+# start marker paired with exactly one end marker. Any other combination
+# (orphaned start, orphaned end, or duplicated markers) is unbalanced.
+# ---------------------------------------------------------------------------
+markers_balanced() {
+  local target="$1"
+  local start="$2"
+  local end="$3"
+  local start_count end_count
+
+  start_count=$(grep -Fxc "$start" "$target" 2>/dev/null || true)
+  end_count=$(grep -Fxc "$end" "$target" 2>/dev/null || true)
+
+  [ "$start_count" = "0" ] && [ "$end_count" = "0" ] && return 0
+  [ "$start_count" = "1" ] && [ "$end_count" = "1" ]
+}
+
+# ---------------------------------------------------------------------------
+# upsert_block_by_markers <target_file> <start_marker> <end_marker> <block_file>
+#
+# Replaces the start->end span (inclusive) with block_file content verbatim,
+# or appends block_file at EOF when no markers are present.
+# Write is atomic: temp file in same dir + mv.
+#
+# Refuses to modify the file when the markers are unbalanced (e.g. an
+# orphaned start marker without its matching end marker), since the awk
+# pass would otherwise drop everything from the start marker to EOF.
+# ---------------------------------------------------------------------------
+upsert_block_by_markers() {
+  local target="$1"
+  local start="$2"
+  local end="$3"
+  local block="$4"
+  local dir tmp
+
+  if ! markers_balanced "$target" "$start" "$end"; then
+    printf 'ERROR: %s has unbalanced managed-block markers (%s / %s); fix the file manually\n' \
+      "$target" "$start" "$end" >&2
+    return 1
+  fi
+
+  dir=$(dirname "$target")
+  tmp=$(mktemp "$dir/.agent-stack-upsert.XXXXXX")
+  trap 'rm -f "$tmp"' RETURN
+
+  # Normalize: ensure target ends with a newline so the append branch starts cleanly.
+  # Only matters when the file is non-empty and lacks a trailing newline; harmless otherwise.
+  if [ -s "$target" ] && [ -n "$(tail -c1 "$target")" ]; then
+    cp "$target" "$tmp"
+    printf '\n' >> "$tmp"
+    mv "$tmp" "$target"
+    tmp=$(mktemp "$dir/.agent-stack-upsert.XXXXXX")
+    trap 'rm -f "$tmp"' RETURN
+  fi
+
+  awk \
+    -v start="$start" \
+    -v end="$end" \
+    -v blockfile="$block" \
+    '
+    BEGIN { inblock = 0; replaced = 0 }
+
+    $0 == start {
+      # Emit the full block file (markers included) then skip old span.
+      while ((getline line < blockfile) > 0) print line
+      close(blockfile)
+      inblock  = 1
+      replaced = 1
+      next
+    }
+
+    inblock && $0 == end { inblock = 0; next }   # consume end marker of old block
+    inblock              { next }                 # consume body of old block
+
+    { print }                                     # passthrough everything else
+
+    END {
+      if (!replaced) {
+        # No markers found — append block at EOF.
+        while ((getline line < blockfile) > 0) print line
+        close(blockfile)
+      }
+    }
+    ' "$target" > "$tmp"
+
+  mv "$tmp" "$target"
+  trap - RETURN
+}
+
+# ---------------------------------------------------------------------------
+# write_managed_block <target_file> <start_marker> <end_marker> <src_file>
+#
+# DRY_RUN gate: log intended action and return without writing.
+# Otherwise: ensure parent dir + file exist, then upsert.
+# ---------------------------------------------------------------------------
+write_managed_block() {
+  local target="$1"
+  local start="$2"
+  local end="$3"
+  local src="$4"
+
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    printf '[dry-run] would upsert %s..%s block into %s\n' "$start" "$end" "$target"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target")"
+  [ -e "$target" ] || : > "$target"
+
+  upsert_block_by_markers "$target" "$start" "$end" "$src"
+}

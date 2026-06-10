@@ -74,13 +74,16 @@ gentle-ai login
 agent-stack
 
 # Direct subcommands (script/cron safe)
-agent-stack sync              # gentle -> persona -> codex -> overlay
+agent-stack sync              # gentle -> persona -> planmode -> claude-hooks -> codex-hooks -> codex -> overlay
 agent-stack persona           # upsert Gentleman-CO override into the 3 agent configs
+agent-stack planmode          # upsert plan-mode/serialization/gate-wiring blocks into the 3 agent configs
+agent-stack claude-hooks      # install Claude Code hook scripts and wire them into settings.json
+agent-stack codex-hooks       # install Codex hook scripts and wire them into hooks.json
 agent-stack overlay           # pull clean-code-lab + intent-overlay install
 agent-stack codex             # pull codex repo + install.sh
 agent-stack gentle            # gentle-ai upgrade && sync
 agent-stack update-clis       # update all 4 CLI binaries
-agent-stack all               # update-clis -> gentle -> persona -> codex -> overlay
+agent-stack all               # update-clis -> gentle -> persona -> planmode -> claude-hooks -> codex-hooks -> codex -> overlay
 agent-stack doctor            # aggregated health report
 agent-stack bootstrap         # re-run the full bootstrap
 ```
@@ -126,6 +129,9 @@ When run without arguments and `gum` is installed:
 | `bootstrap` | gum → agent-stack repo → codex install → intent-overlay install → **persona** → symlink |
 | `gentle` | `gentle-ai upgrade`, `gentle-ai sync` |
 | `persona` | Upserts `<!-- persona-co:start/end -->` block from `persona/gentleman-co.md` into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.override.md`, `~/.config/opencode/AGENTS.md`. Idempotent. Run automatically after `gentle` in every `sync`. |
+| `planmode` | Upserts `<!-- plan-mode -->`, `<!-- serialization -->`, and `<!-- gate-wiring -->` blocks (from `persona/`) into the same 3 agent configs as `persona`. Idempotent. Run automatically after `persona` in every `sync`. |
+| `claude-hooks` | Installs `hooks/*.sh` into `~/.claude/hooks/` and merges `PreToolUse[ExitPlanMode]` → `check-plan-contract.sh`, `Stop` → `clean-code-gate.sh`, and `UserPromptSubmit` → `skill-registry-refresh.sh` into `~/.claude/settings.json` without touching unrelated keys. Idempotent. |
+| `codex-hooks` | Installs `hooks/clean-code-gate.sh` into `~/.codex/hooks/` and merges a `Stop` hook into `~/.codex/hooks.json` without touching the existing `SessionStart` entry. Idempotent. Codex will ask to re-trust hooks once (`trusted_hash` change). |
 | `codex` | `git pull` → `install.sh` → `codex-sdd-sync --mcp-audit` |
 | `overlay` | `git pull` → `intent-overlay install` |
 | `update-clis` | `claude update` (if present), `codex update` (if present), `opencode upgrade` (if present), `gentle-ai upgrade` (if present) |
@@ -142,6 +148,11 @@ When run without arguments and `gum` is installed:
 - `gentle-ai --version` (required)
 - `git --version` (required)
 - `gum --version` (optional — menu won't work without it but all subcommands still work)
+
+It also runs warn-only environment checks (never auto-fixed, never affect the exit code):
+
+- Duplicate `gentle-ai`/`engram` binaries in both `~/.local/bin` and `~/go/bin` — prints both versions and suggests removing the `~/go/bin` copy.
+- Repeated `PATH` entries in `~/.bashrc` (e.g. the same directory added on every install) — suggests an idempotency guard.
 
 ## Manifest
 
@@ -165,6 +176,8 @@ bash agent-stack.test.sh
 bash lib/common.test.sh
 bash lib/gentle.test.sh
 bash lib/persona.test.sh
+bash lib/planmode.test.sh
+bash lib/claude.test.sh
 bash lib/overlay.test.sh
 bash lib/codex.test.sh
 bash lib/clis.test.sh

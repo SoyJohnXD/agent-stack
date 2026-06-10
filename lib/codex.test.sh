@@ -147,6 +147,196 @@ TEST_HOME3=$(new_home)
 
 rm -rf "$TEST_HOME3"
 
+# ---------------------------------------------------------------------------
+# T18 — phase_codex_hooks
+# ---------------------------------------------------------------------------
+new_codex_hooks_src() {
+  local dir; dir=$(mktemp -d)
+  printf '#!/usr/bin/env bash\necho "clean-code-gate"\n' > "$dir/clean-code-gate.sh"
+  printf '%s' "$dir"
+}
+
+# T18a — installs clean-code-gate.sh, executable
+T18A_HOME=$(new_home)
+T18A_SRC=$(new_codex_hooks_src)
+
+(
+  export HOME="$T18A_HOME" DRY_RUN=0 CODEX_HOOKS_SRC_DIR="$T18A_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/codex.sh"
+  install_codex_hook_scripts
+) >/dev/null 2>&1
+
+T18A_DEST="$T18A_HOME/.codex/hooks/clean-code-gate.sh"
+if [ -f "$T18A_DEST" ] && [ -x "$T18A_DEST" ]; then
+  pass "T18a: clean-code-gate.sh installed to ~/.codex/hooks and executable"
+else
+  fail "T18a: clean-code-gate.sh should be installed and executable"
+fi
+
+rm -rf "$T18A_HOME" "$T18A_SRC"
+
+# T18b — adds Stop hook, preserves SessionStart, idempotent on re-run
+T18B_HOME=$(new_home)
+T18B_SRC=$(new_codex_hooks_src)
+T18B_HOOKS="$T18B_HOME/.codex/hooks.json"
+mkdir -p "$(dirname "$T18B_HOOKS")"
+cat > "$T18B_HOOKS" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "gentle-ai skill-registry refresh --quiet --no-gitignore --cwd \"$PWD\" || true",
+            "statusMessage": "Refreshing skill registry",
+            "timeout": 30,
+            "type": "command"
+          }
+        ],
+        "matcher": "startup|resume|clear|compact"
+      }
+    ]
+  }
+}
+EOF
+
+SESSIONSTART_BEFORE=$(jq -c '.hooks.SessionStart' "$T18B_HOOKS")
+
+(
+  export HOME="$T18B_HOME" DRY_RUN=0 CODEX_HOOKS_SRC_DIR="$T18B_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/codex.sh"
+  write_codex_hooks_json
+) >/dev/null 2>&1
+
+STOP_CMD=$(jq -r '.hooks.Stop[]? | .hooks[0].command' "$T18B_HOOKS")
+case "$STOP_CMD" in
+  *clean-code-gate.sh) pass "T18b: Stop hook wired to clean-code-gate.sh" ;;
+  *) fail "T18b: Stop hook not wired (got: $STOP_CMD)" ;;
+esac
+
+SESSIONSTART_AFTER=$(jq -c '.hooks.SessionStart' "$T18B_HOOKS")
+[ "$SESSIONSTART_BEFORE" = "$SESSIONSTART_AFTER" ] && pass "T18b: SessionStart entry untouched" || fail "T18b: SessionStart entry was modified"
+
+cp "$T18B_HOOKS" "${T18B_HOOKS}.after_run1"
+
+(
+  export HOME="$T18B_HOME" DRY_RUN=0 CODEX_HOOKS_SRC_DIR="$T18B_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/codex.sh"
+  write_codex_hooks_json
+) >/dev/null 2>&1
+
+if cmp -s "${T18B_HOOKS}.after_run1" "$T18B_HOOKS"; then
+  pass "T18b: second run of write_codex_hooks_json is byte-identical"
+else
+  fail "T18b: hooks.json changed between run 1 and run 2"
+fi
+
+rm -rf "$T18B_HOME" "$T18B_SRC"
+
+# T18c — dry-run: no file mutation
+T18C_HOME=$(new_home)
+T18C_SRC=$(new_codex_hooks_src)
+
+T18C_OUT=$(
+  export HOME="$T18C_HOME" DRY_RUN=1 CODEX_HOOKS_SRC_DIR="$T18C_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/codex.sh"
+  phase_codex_hooks
+) 2>&1
+
+if [ ! -e "$T18C_HOME/.codex/hooks" ] && [ ! -e "$T18C_HOME/.codex/hooks.json" ]; then
+  pass "T18c: dry-run creates no files"
+else
+  fail "T18c: dry-run should not create ~/.codex/hooks or hooks.json"
+fi
+
+case "$T18C_OUT" in
+  *"[dry-run]"*) pass "T18c: dry-run log output present" ;;
+  *) fail "T18c: dry-run should produce [dry-run] log lines (got: $T18C_OUT)" ;;
+esac
+
+rm -rf "$T18C_HOME" "$T18C_SRC"
+
+# T18d — malformed hooks.json (.hooks.Stop is an object, not an array) ->
+# refusal with message, original file untouched, no leftover temp files
+T18D_HOME=$(new_home)
+T18D_SRC=$(new_codex_hooks_src)
+T18D_HOOKS="$T18D_HOME/.codex/hooks.json"
+mkdir -p "$(dirname "$T18D_HOOKS")"
+cat > "$T18D_HOOKS" <<'EOF'
+{
+  "hooks": {
+    "Stop": {"not": "an array"}
+  }
+}
+EOF
+cp "$T18D_HOOKS" "${T18D_HOOKS}.before"
+
+T18D_OUT=$(
+  export HOME="$T18D_HOME" DRY_RUN=0 CODEX_HOOKS_SRC_DIR="$T18D_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/codex.sh"
+  write_codex_hooks_json 2>&1
+)
+T18D_EXIT=$?
+
+[ "$T18D_EXIT" -ne 0 ] && pass "T18d: write_codex_hooks_json returns non-zero on malformed hooks.json" || fail "T18d: write_codex_hooks_json should return non-zero on malformed hooks.json"
+
+case "$T18D_OUT" in
+  *"not modified"*) pass "T18d: error message states the file was not modified" ;;
+  *) fail "T18d: expected an actionable error message (got: $T18D_OUT)" ;;
+esac
+
+if cmp -s "${T18D_HOOKS}.before" "$T18D_HOOKS"; then
+  pass "T18d: malformed hooks.json left untouched"
+else
+  fail "T18d: malformed hooks.json should not be modified"
+fi
+
+LEFTOVER_TMP=$(find "$T18D_HOME/.codex" -name '.agent-stack-upsert.*' 2>/dev/null)
+[ -z "$LEFTOVER_TMP" ] && pass "T18d: no leftover .agent-stack-upsert.* temp files" || fail "T18d: leftover temp files found: $LEFTOVER_TMP"
+
+rm -rf "$T18D_HOME" "$T18D_SRC"
+
+# T18e — hooks.json with invalid JSON syntax -> refusal with message,
+# original file untouched, no leftover temp files (jq empty guard, before
+# any mktemp call)
+T18E_HOME=$(new_home)
+T18E_SRC=$(new_codex_hooks_src)
+T18E_HOOKS="$T18E_HOME/.codex/hooks.json"
+mkdir -p "$(dirname "$T18E_HOOKS")"
+printf '{ "hooks": { invalid json' > "$T18E_HOOKS"
+cp "$T18E_HOOKS" "${T18E_HOOKS}.before"
+
+T18E_OUT=$(
+  export HOME="$T18E_HOME" DRY_RUN=0 CODEX_HOOKS_SRC_DIR="$T18E_SRC"
+  source "$HERE/common.sh"
+  source "$HERE/codex.sh"
+  write_codex_hooks_json 2>&1
+)
+T18E_EXIT=$?
+
+[ "$T18E_EXIT" -ne 0 ] && pass "T18e: write_codex_hooks_json returns non-zero on invalid JSON" || fail "T18e: write_codex_hooks_json should return non-zero on invalid JSON"
+
+case "$T18E_OUT" in
+  *"not valid JSON"*"not modified"*) pass "T18e: error message states the file is not valid JSON and was not modified" ;;
+  *) fail "T18e: expected a not-valid-JSON error message (got: $T18E_OUT)" ;;
+esac
+
+if cmp -s "${T18E_HOOKS}.before" "$T18E_HOOKS"; then
+  pass "T18e: invalid JSON hooks.json left untouched"
+else
+  fail "T18e: invalid JSON hooks.json should not be modified"
+fi
+
+LEFTOVER_TMP=$(find "$T18E_HOME/.codex" -name '.agent-stack-upsert.*' 2>/dev/null)
+[ -z "$LEFTOVER_TMP" ] && pass "T18e: no leftover .agent-stack-upsert.* temp files" || fail "T18e: leftover temp files found: $LEFTOVER_TMP"
+
+rm -rf "$T18E_HOME" "$T18E_SRC"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nAll tests passed.\n'
 else
